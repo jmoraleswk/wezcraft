@@ -7,16 +7,6 @@ local wezterm = require('wezterm')
 local M = {}
 
 function M.apply(config, constants)
-
-    -- ======================
-    -- FONT
-    -- Requires: brew install --cask font-firamono-nerd-font
-    -- See README.md for full setup instructions
-    -- ======================
-    config.font = wezterm.font("FiraMono Nerd Font")
-    config.font_size = 12
-    config.line_height = 1.2
-
     -- ======================
     -- COLORS
     -- ======================

@@ -13,15 +13,44 @@ config.leader = { key = 'a', mods = 'CTRL', timeout_milliseconds = 2000 }
 config.send_composed_key_when_left_alt_is_pressed = false
 config.send_composed_key_when_right_alt_is_pressed = false
 
+-- Font (single source of truth)
+local fonts = require("constants.fonts")
+local emoji_font = wezterm.target_triple:find("darwin") and fonts.EMOJI_FONT_MACOS or fonts.EMOJI_FONT_WINDOWS
+config.font = wezterm.font_with_fallback {
+  { family = fonts.MAIN_FONT, weight = fonts.MAIN_FONT_WEIGHT },
+  { family = emoji_font },
+}
+
 -- ======================
 -- THEME
 -- ======================
 local theme_default = require("themes.theme-default")
+local theme_kanagawa = require("themes.theme-kanagawa")
 local theme_utils = require("utils.theme")
 local constants_default = require("constants.default-theme")
 
 local active_theme = theme_utils.load_active_theme()
-theme_default.apply(config, constants_default)
+
+if active_theme == "kanagawa" then
+  theme_kanagawa.apply(config, constants_default)
+else
+  theme_default.apply(config, constants_default)
+end
+
+-- ======================
+-- TOGGLE THEME (runtime)
+-- ======================
+wezterm.on("toggle-theme", function(window)
+  local current = theme_utils.get_active_theme()
+  local next = current == "kanagawa" and "default" or "kanagawa"
+  local path = wezterm.config_dir .. "/themes/active-theme.json"
+  local file = io.open(path, "w")
+  file:write(wezterm.json_encode({
+    active_theme = next
+  }))
+  file:close()
+  wezterm.reload_configuration()
+end)
 
 -- ======================
 -- STATUS BAR
@@ -35,8 +64,19 @@ wezterm.on("update-status", function(window, pane)
     return
   end
 
-  window:set_left_status("")
-  window:set_right_status("")
+  local theme = theme_utils.get_active_theme()
+  if theme == "kanagawa" then
+    local ok_cwd, cwd = pcall(function()
+      return pane and pane:get_current_working_dir()
+    end)
+    local dir = cwd and cwd.file_path or ""
+    if not ok_cwd then
+      dir = ""
+    end
+    window:set_right_status("  " .. dir .. "  ")
+  else
+    window:set_right_status("")
+  end
 end)
 
 -- ======================
@@ -106,19 +146,6 @@ config.keys = {
     key = '3',
     mods = 'ALT',
     action = wezterm.action.SendString("#"),
-  },
-  -- Test status message (CTRL+CMD+S)
-  {
-    key = 's',
-    mods = 'CTRL|CMD',
-    action = wezterm.action_callback(function(window)
-      local status_utils = require("utils.status")
-      status_utils.set_status_message(
-        window,
-        "** Status bar working! (" .. os.time() .. ") **",
-        5
-      )
-    end),
   },
 }
 

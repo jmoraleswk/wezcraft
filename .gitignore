@@ -5,6 +5,9 @@
 *.bkp
 *.zip
 
+# SDD artifacts (optional, track if desired)
+# openspec/
+
 # Editor
 *.swp
 *.swo
@@ -15,3 +18,5 @@
 # Lua
 *.luac
 luac.out
+
+codebase/*

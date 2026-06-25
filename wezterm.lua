@@ -14,6 +14,42 @@ config.send_composed_key_when_left_alt_is_pressed = false
 config.send_composed_key_when_right_alt_is_pressed = false
 
 -- ======================
+-- THEME
+-- ======================
+local theme_default = require("themes.theme-default")
+local theme_utils = require("utils.theme")
+local constants_default = require("constants.default-theme")
+
+local active_theme = theme_utils.load_active_theme()
+theme_default.apply(config, constants_default)
+
+-- ======================
+-- STATUS BAR
+-- ======================
+local status_utils = require("utils.status")
+
+wezterm.on("update-status", function(window, pane)
+  local status_message = status_utils.get_status_message(window)
+  if status_message then
+    window:set_right_status(status_message)
+    return
+  end
+
+  window:set_left_status("")
+  window:set_right_status("")
+end)
+
+-- ======================
+-- COMMAND PALETTE
+-- ======================
+local ok_commands, commands = pcall(require, "commands")
+if ok_commands and type(commands) == "table" then
+  wezterm.on("augment-command-palette", function()
+    return commands
+  end)
+end
+
+-- ======================
 -- SHORTCUTS
 -- ======================
 config.keys = {
@@ -70,6 +106,19 @@ config.keys = {
     key = '3',
     mods = 'ALT',
     action = wezterm.action.SendString("#"),
+  },
+  -- Test status message (CTRL+CMD+S)
+  {
+    key = 's',
+    mods = 'CTRL|CMD',
+    action = wezterm.action_callback(function(window)
+      local status_utils = require("utils.status")
+      status_utils.set_status_message(
+        window,
+        "** Status bar working! (" .. os.time() .. ") **",
+        5
+      )
+    end),
   },
 }
 

@@ -40,11 +40,19 @@ end
 -- ======================
 -- TOGGLE THEME (runtime)
 -- ======================
+local status_utils = require("utils.status")
+
 wezterm.on("toggle-theme", function(window)
   local current = theme_utils.get_active_theme()
   local next = current == "kanagawa" and "default" or "kanagawa"
   local path = wezterm.config_dir .. "/themes/active-theme.json"
-  local file = io.open(path, "w")
+  local file, err = io.open(path, "w")
+  if not file then
+    local msg = "Failed to write active theme: " .. (err or "unknown error")
+    wezterm.log_error(msg)
+    status_utils.set_status_message(window, "Error: " .. msg, 5)
+    return
+  end
   file:write(wezterm.json_encode({
     active_theme = next
   }))
@@ -55,29 +63,8 @@ end)
 -- ======================
 -- STATUS BAR
 -- ======================
-local status_utils = require("utils.status")
-
-wezterm.on("update-status", function(window, pane)
-  local status_message = status_utils.get_status_message(window)
-  if status_message then
-    window:set_right_status(status_message)
-    return
-  end
-
-  local theme = theme_utils.get_active_theme()
-  if theme == "kanagawa" then
-    local ok_cwd, cwd = pcall(function()
-      return pane and pane:get_current_working_dir()
-    end)
-    local dir = cwd and cwd.file_path or ""
-    if not ok_cwd then
-      dir = ""
-    end
-    window:set_right_status("  " .. dir .. "  ")
-  else
-    window:set_right_status("")
-  end
-end)
+local statusbar = require("elements.statusbar.config")
+statusbar.setup(wezterm, config)
 
 -- ======================
 -- COMMAND PALETTE
@@ -93,55 +80,55 @@ end
 -- SHORTCUTS
 -- ======================
 config.keys = {
-  -- Cerrar el panel actual (pide confirmación)
+  -- Close current panel (requires confirmation)
   {
     key = 'w',
     mods = 'CMD|SHIFT',
     action = wezterm.action.CloseCurrentPane { confirm = true },
   },
-  -- Dividir panel horizontalmente
+  -- Split panel horizontally
   {
     key = '2',
     mods = 'CTRL|CMD',
     action = wezterm.action.SplitHorizontal { domain = "CurrentPaneDomain" },
   },
-  -- Dividir panel verticalmente
+  -- Split panel vertically
   {
     key = '5',
     mods = 'CTRL|CMD',
     action = wezterm.action.SplitVertical { domain = "CurrentPaneDomain" },
   },
-  -- Ir al FINAL de la palabra (Option + Flecha Derecha)
+  -- Go to END of word (Option + Right Arrow)
   {
     key = 'RightArrow',
     mods = 'OPT',
     action = wezterm.action.SendKey { key = 'f', mods = 'ALT' },
   },
-  -- Ir al INICIO de la palabra (Option + Flecha Izquierda)
+  -- Go to START of word (Option + Left Arrow)
   {
     key = 'LeftArrow',
     mods = 'OPT',
     action = wezterm.action.SendKey { key = 'b', mods = 'ALT' },
   },
-  -- virgulilla (ALT + ñ)
+  -- tilde (ALT + ñ)
   {
     key = 'ñ',
     mods = 'ALT',
     action = wezterm.action.SendString("~"),
   },
-  -- arroba (ALT + 2)
+  -- at sign (ALT + 2)
   {
     key = '2',
     mods = 'ALT',
     action = wezterm.action.SendString("@"),
   },
-  -- barra invertida (ALT + º)
+  -- backslash (ALT + º)
   {
     key = 'º',
     mods = 'ALT',
     action = wezterm.action.SendString("\\"),
   },
-  -- barra invertida (ALT + 3)
+  -- backslash (ALT + 3)
   {
     key = '3',
     mods = 'ALT',

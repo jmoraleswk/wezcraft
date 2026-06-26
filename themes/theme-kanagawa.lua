@@ -74,4 +74,22 @@ function M.apply(config, constants)
   config.window_close_confirmation = "AlwaysPrompt"
 end
 
+-- =============================================================================
+-- STATUSBAR COLORS — matches this theme's palette
+-- =============================================================================
+M.statusbar_colors = {
+  bg_left      = "#1f1f28",
+  bg_right     = "#1f1f28",
+  fg_primary   = "#dcd7ba",
+  fg_muted     = "#727169",
+  accent       = "#7e9cd8",
+  git          = "#76946a",
+  battery_ok   = "#98bb6c",
+  battery_warn = "#c0a36e",
+  battery_crit = "#c34043",
+  cwd          = "#957fb8",
+  stat_bg      = "#2d4f67",
+  stat_fg      = "#7e9cd8",
+}
+
 return M

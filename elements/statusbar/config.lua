@@ -24,39 +24,12 @@ local SHOW_CWD        = true     -- absolute path of current directory (right)
 local SEP = "  │  "
 
 -- =============================================================================
--- COLOR PALETTE
--- bg_left / bg_right → backgrounds for each half of the bar
--- These colors apply on top of the theme you chose in wezterm.lua
+-- COLOR PALETTE — loaded dynamically from the active theme
+-- Each theme exports statusbar_colors in themes/theme-*.lua
+-- Colors are refreshed on each update-status call to reflect theme changes
 -- =============================================================================
 
-local COLORS = {
-  bg_left      = "#1a1b26",   -- left section background (adjusted to Tokyo Night)
-  bg_right     = "#1a1b26",   -- right section background
-  fg_primary   = "#c0caf5",   -- primary text
-  fg_muted     = "#565f89",   -- secondary text / separators
-  accent       = "#7aa2f7",   -- active workspace, clock
-  git          = "#9ece6a",   -- git branch
-  battery_ok   = "#9ece6a",   -- battery ≥ 20%
-  battery_warn = "#e0af68",   -- battery between 10% and 20%
-  battery_crit = "#f7768e",   -- battery < 10%
-  cwd          = "#bb9af7",   -- current directory path
-  stat_bg      = '#1f2335',   -- subtle background (e.g. TokyoNight style)
-  stat_fg      = '#7aa2f7'    -- text color
-}
-
--- If you use another theme, here are suggested adjustments:
---
--- Catppuccin Mocha:
---   bg_left / bg_right = "#1e1e2e"
---   fg_primary = "#cdd6f4", accent = "#89b4fa", git = "#a6e3a1"
---
--- Nord:
---   bg_left / bg_right = "#2e3440"
---   fg_primary = "#d8dee9", accent = "#88c0d0", git = "#a3be8c"
---
--- Gruvbox dark:
---   bg_left / bg_right = "#282828"
---   fg_primary = "#ebdbb2", accent = "#83a598", git = "#b8bb26"
+local theme_utils = require("utils.theme")
 
 -- =============================================================================
 -- INTERNAL HELPERS
@@ -73,10 +46,10 @@ local function battery_icon(pct, charging)
 end
 
 -- Battery color based on level
-local function battery_color(pct)
-  if pct < 10 then return COLORS.battery_crit end
-  if pct < 20 then return COLORS.battery_warn end
-  return COLORS.battery_ok
+local function battery_color(pct, colors)
+  if pct < 10 then return colors.battery_crit end
+  if pct < 20 then return colors.battery_warn end
+  return colors.battery_ok
 end
 
 -- =============================================================================
@@ -89,6 +62,9 @@ function M.setup(wezterm_module, _config)
   local stats_file = global_constants.STATUS_BAR.stats_file
 
   wezterm_module.on("update-status", function(window, pane)
+    -- Load colors fresh each time to reflect theme changes
+    local COLORS = theme_utils.get_statusbar_colors()
+
     -- Check for temporary status message first
     local status_message = status_utils.get_status_message(window)
     if status_message then
@@ -110,6 +86,7 @@ function M.setup(wezterm_module, _config)
 
     -- RIGHT: cwd | git | battery | stats | clock
     local right_elements = {}
+    table.insert(right_elements, { Background = { Color = COLORS.bg_right } })
 
     -- CWD
     if SHOW_CWD then
@@ -176,7 +153,7 @@ function M.setup(wezterm_module, _config)
         local pct      = math.floor(bat.state_of_charge * 100)
         local charging = bat.state == "Charging" or bat.state == "Full"
         local icon     = battery_icon(pct, charging)
-        local color    = battery_color(pct)
+        local color    = battery_color(pct, COLORS)
         table.insert(right_elements, { Foreground = { Color = color } })
         table.insert(right_elements, { Text = icon .. " " .. pct .. "%" })
         table.insert(right_elements, { Foreground = { Color = COLORS.fg_muted } })
@@ -194,18 +171,17 @@ function M.setup(wezterm_module, _config)
 
     if stats_text and stats_text ~= "" then
       table.insert(right_elements, "ResetAttributes")
-      table.insert(right_elements, { Text = "" })
+      table.insert(right_elements, { Text = " " })
       table.insert(right_elements, { Foreground = { Color = COLORS.stat_bg } })
       table.insert(right_elements, { Text = "" })
       table.insert(right_elements, { Background = { Color = COLORS.stat_bg } })
       table.insert(right_elements, { Foreground = { Color = COLORS.stat_fg } })
       table.insert(right_elements, { Attribute = { Intensity = "Bold" } })
-      table.insert(right_elements, { Text = stats_text })
+      table.insert(right_elements, { Text = " " .. stats_text .. " " })
       table.insert(right_elements, "ResetAttributes")
       table.insert(right_elements, { Foreground = { Color = COLORS.stat_bg } })
       table.insert(right_elements, { Text = "" })
       table.insert(right_elements, "ResetAttributes")
-      table.insert(right_elements, { Text = "" })
       table.insert(right_elements, { Foreground = { Color = COLORS.fg_muted } })
       table.insert(right_elements, { Text = SEP })
     end

@@ -136,4 +136,14 @@ config.keys = {
   },
 }
 
+-- ======================
+-- RESURRECT (session persistence)
+-- ======================
+local ok_resurrect, resurrect_config = pcall(require, "elements.resurrect.config")
+if ok_resurrect and resurrect_config and resurrect_config.keys then
+  for _, key in ipairs(resurrect_config.keys) do
+    table.insert(config.keys, key)
+  end
+end
+
 return config

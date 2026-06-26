@@ -1,4 +1,4 @@
-# wezcraft-base
+# WezCraft
 
 Modular WezTerm terminal configuration.
 
@@ -29,6 +29,7 @@ cp -r themes constants utils commands assets ~/.config/wezterm/
 - `utils/` — Utilities (theme loader, status messages)
 - `commands/` — Custom commands for command palette
 - `assets/` — Background images and resources
+- `elements/resurrect/` — Session persistence config ([docs](elements/resurrect/README.md))
 
 ## Themes
 
@@ -41,6 +42,17 @@ cp -r themes constants utils commands assets ~/.config/wezterm/
   - **Toggle terminal transparency** — Only works with default theme (shows error otherwise)
   - **Toggle theme** — Switch between default and kanagawa
 - **CMD+Shift+L** — Debug logs
+- `resurrect` — Session persistence quick reference ([full docs](elements/resurrect/README.md))
+
+### Resurrect Keybindings
+
+| Key | Action |
+|-----|--------|
+| `ALT+SUP+N` | New workspace |
+| `SUP+W` | Save snapshot |
+| `ALT+R` | Restore session |
+| `ALT+D` | Rename workspace |
+| `SUP+D` | Delete snapshot |
 
 ### Command Palette Notes
 

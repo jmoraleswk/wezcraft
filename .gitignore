@@ -19,4 +19,11 @@
 *.luac
 luac.out
 
+# Encryption keys (NEVER commit these)
+*.key
+
+# Plugins (installed separately, see README)
+plugins/resurrect/
+
 codebase/*
+docs/*

@@ -27,6 +27,7 @@ config.font = wezterm.font_with_fallback {
 local theme_default = require("themes.theme-default")
 local theme_kanagawa = require("themes.theme-kanagawa")
 local theme_utils = require("utils.theme")
+local globals = require("constants.global")
 local constants_default = require("constants.default-theme")
 
 local active_theme = theme_utils.load_active_theme()
@@ -44,9 +45,8 @@ local status_utils = require("utils.status")
 
 wezterm.on("toggle-theme", function(window)
   local current = theme_utils.get_active_theme()
-  local next = current == "kanagawa" and "default" or "kanagawa"
-  local path = wezterm.config_dir .. "/themes/active-theme.json"
-  local file, err = io.open(path, "w")
+  local next_theme = current == "kanagawa" and "default" or "kanagawa"
+  local file, err = io.open(globals.ACTIVE_THEME_FILE, "w")
   if not file then
     local msg = "Failed to write active theme: " .. (err or "unknown error")
     wezterm.log_error(msg)
@@ -54,7 +54,7 @@ wezterm.on("toggle-theme", function(window)
     return
   end
   file:write(wezterm.json_encode({
-    active_theme = next
+    active_theme = next_theme
   }))
   file:close()
   wezterm.reload_configuration()

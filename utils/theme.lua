@@ -1,4 +1,5 @@
 local wezterm = require("wezterm")
+local globals = require("constants.global")
 
 local M = {}
 
@@ -6,8 +7,7 @@ local M = {}
 M._active_theme = nil
 
 function M.load_active_theme()
-  local path = wezterm.config_dir .. "/themes/active-theme.json"
-  local file = io.open(path, "r")
+  local file = io.open(globals.ACTIVE_THEME_FILE, "r")
   if not file then
     M._active_theme = "default"
     return M._active_theme
@@ -20,7 +20,15 @@ function M.load_active_theme()
 end
 
 function M.get_active_theme()
-  return M._active_theme or "default"
+  -- Always read from file to stay in sync after reload
+  local file = io.open(globals.ACTIVE_THEME_FILE, "r")
+  if not file then
+    return "default"
+  end
+  local content = file:read("*a")
+  file:close()
+  local ok, data = pcall(wezterm.json_parse, content)
+  return (ok and data.active_theme) or "default"
 end
 
 --- Returns the statusbar color palette for the active theme.

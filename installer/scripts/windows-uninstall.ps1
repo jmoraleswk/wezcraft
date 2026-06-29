@@ -67,7 +67,18 @@ if ($AtuinPath) {
     }
 }
 
-# --- 7. Prompt: remove backups ---
+# --- 7. Prompt: remove stats daemon ---
+$TaskName = "WezTermStats"
+$ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if ($ExistingTask) {
+    $Answer = Read-Host "Remove stats daemon (CPU/RAM)? [y/N]"
+    if ($Answer -match '^[Yy]$') {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+        Write-Host "  Removed stats daemon"
+    }
+}
+
+# --- 8. Prompt: remove backups ---
 $BackupDir = Join-Path $env:USERPROFILE ".config"
 $Backups = Get-ChildItem -Path $BackupDir -Filter "wezterm.bak.*" -Directory -ErrorAction SilentlyContinue
 if ($Backups.Count -gt 0) {

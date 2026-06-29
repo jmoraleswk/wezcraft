@@ -204,17 +204,41 @@ if ($AtuinPath) {
     }
 }
 
-# --- 11. Summary ---
+# --- 11. Stats daemon (Task Scheduler) ---
+Write-Host ""
+Write-Host "Installing stats daemon (CPU/RAM)..."
+
+$StatsScript = Join-Path $Target "elements\statusbar\update_stats_windows.ps1"
+$TaskName = "WezTermStats"
+
+# Remove existing task if present
+Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+
+# Create scheduled task to run at user logon
+$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$StatsScript`""
+$Trigger = New-ScheduledTaskTrigger -AtLogon -User $env:USERNAME
+$Settings = New-ScheduledTaskSettingsSet -Hidden -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+
+Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Force | Out-Null
+
+# Start the task immediately
+Start-ScheduledTask -TaskName $TaskName
+
+Write-Host "Stats daemon installed and started."
+Write-Host "Task: $TaskName (runs at logon)"
+
+# --- 12. Summary ---
 Write-Host ""
 Write-Host "=== Done ===" -ForegroundColor Green
 Write-Host "Config installed to: $Target"
 Write-Host "Plugin: resurrect.wezterm (bundled)"
+Write-Host "Font: FiraCode Nerd Font"
 if ($StarshipInstalled) {
     Write-Host "Starship: installed"
 }
 if ($AtuinInstalled) {
     Write-Host "Atuin: installed"
 }
+Write-Host "Stats daemon: active (Task Scheduler)"
 Write-Host ""
-Write-Host "Note: Stats daemon (CPU/RAM) is not available on Windows."
 Write-Host "Restart your terminal to apply changes."

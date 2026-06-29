@@ -182,7 +182,41 @@ end' >> "$SHELL_RC" ;;
   fi
 fi
 
-# --- 10. Summary ---
+# --- 10. Stats daemon (systemd) ---
+echo ""
+echo "Installing stats daemon (CPU/RAM)..."
+
+# Make stats script executable
+chmod +x "$TARGET/elements/statusbar/update_stats_linux.sh"
+
+# Create systemd service
+SYSTEMD_DIR="${HOME}/.config/systemd/user"
+mkdir -p "$SYSTEMD_DIR"
+
+cat > "$SYSTEMD_DIR/wezterm-stats.service" <<EOF
+[Unit]
+Description=WezTerm Stats Daemon (CPU/RAM)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=$TARGET/elements/statusbar/update_stats_linux.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+# Enable and start the service
+systemctl --user daemon-reload
+systemctl --user enable wezterm-stats.service
+systemctl --user start wezterm-stats.service
+
+echo "Stats daemon installed and started."
+echo "Service file: $SYSTEMD_DIR/wezterm-stats.service"
+
+# --- 11. Summary ---
 echo ""
 echo "=== Done ==="
 echo "Config installed to: $TARGET"
@@ -194,6 +228,6 @@ fi
 if command -v atuin &>/dev/null; then
   echo "Atuin: installed"
 fi
+echo "Stats daemon: active (systemd)"
 echo ""
-echo "Note: Stats daemon (CPU/RAM) is not available on Linux."
 echo "Restart your terminal or run: source $SHELL_RC"

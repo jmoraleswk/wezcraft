@@ -58,7 +58,20 @@ if command -v atuin &>/dev/null; then
   fi
 fi
 
-# --- 7. Prompt: remove backups ---
+# --- 7. Prompt: remove stats daemon ---
+SYSTEMD_DIR="${HOME}/.config/systemd/user"
+if [[ -f "$SYSTEMD_DIR/wezterm-stats.service" ]]; then
+  read -rp "Remove stats daemon (CPU/RAM)? [y/N] " ANSWER
+  if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
+    systemctl --user stop wezterm-stats.service 2>/dev/null || true
+    systemctl --user disable wezterm-stats.service 2>/dev/null || true
+    rm -f "$SYSTEMD_DIR/wezterm-stats.service"
+    systemctl --user daemon-reload 2>/dev/null || true
+    echo "  Removed stats daemon"
+  fi
+fi
+
+# --- 8. Prompt: remove backups ---
 BACKUPS=($(ls -d "${HOME}"/.config/wezterm.bak.* 2>/dev/null || true))
 if [[ ${#BACKUPS[@]} -gt 0 ]]; then
   echo "Found ${#BACKUPS[@]} backup(s):"

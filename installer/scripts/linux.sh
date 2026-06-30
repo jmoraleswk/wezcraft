@@ -34,7 +34,7 @@ rsync -a --exclude='.git' \
           --exclude='.atl' \
           --exclude='codebase' \
           --exclude='installer' \
-          --exclude='docs' \
+          --exclude='/docs' \
           --exclude='README.md' \
           "$SOURCE/" "$TARGET/"
 
@@ -88,52 +88,74 @@ else
 fi
 
 # --- 7. Starship config ---
-STARSHIP_CONFIG="${HOME}/.config/starship.toml"
+STARSHIP_CONFIG="${HOME}/.config/starship/starship.toml"
 if [[ ! -f "$STARSHIP_CONFIG" ]]; then
-  echo "Creating default Starship config..."
-  mkdir -p "${HOME}/.config"
-  cat > "$STARSHIP_CONFIG" <<'TOML'
-# Starship config for WezCraft
-format = """
-$directory\
-$git_branch\
-$git_status\
-$nodejs\
-$lua\
-$docker_context\
-$shell\
-$character"""
-
-[directory]
-truncation_length = 3
-truncate_to_repo = true
-
-[git_branch]
-symbol = " "
-
-[git_status]
-deleted = "✘"
-ahead = "⇡${count}"
-behind = "⇣${count}"
-diverged = "⇡${count}⇣${count}"
-
-[nodejs]
-symbol = " "
-
-[lua]
-symbol = " "
-
-[docker_context]
-symbol = " "
-
-[character]
-success_symbol = "[❯](green)"
-error_symbol = "[❯](red)"
-TOML
+  echo "Creating Starship config with nerd-font-symbols preset..."
+  mkdir -p "${HOME}/.config/starship"
+  starship preset nerd-font-symbols -o "$STARSHIP_CONFIG"
   echo "Starship config created at: $STARSHIP_CONFIG"
 fi
 
-# --- 8. Install Atuin shell history ---
+# --- 8. Shell integration (Starship) ---
+if command -v starship &>/dev/null; then
+  SHELL_NAME="$(basename "$SHELL")"
+  case "$SHELL_NAME" in
+    zsh)  STARSHIP_RC="${HOME}/.zshrc" ;;
+    bash) STARSHIP_RC="${HOME}/.bashrc" ;;
+    fish) STARSHIP_RC="${HOME}/.config/fish/config.fish" ;;
+    *)    STARSHIP_RC="" ;;
+  esac
+
+  if [[ -n "$STARSHIP_RC" ]] && [[ -f "$STARSHIP_RC" ]]; then
+    if ! grep -q "starship init" "$STARSHIP_RC" 2>/dev/null; then
+      echo "Adding Starship to $STARSHIP_RC..."
+      case "$SHELL_NAME" in
+        fish) echo 'starship init fish | source' >> "$STARSHIP_RC" ;;
+        *)    echo "eval \"\$(starship init $SHELL_NAME)\"" >> "$STARSHIP_RC" ;;
+      esac
+    fi
+    # Add resurrect() helper function
+    if ! grep -q "resurrect()" "$STARSHIP_RC" 2>/dev/null; then
+      echo "Adding resurrect() helper to $STARSHIP_RC..."
+      cat >> "$STARSHIP_RC" <<'RESURRECT'
+
+# WezTerm Resurrect helper
+resurrect() {
+    local base=~/.config/wezterm/elements/resurrect/docs/helpers
+    local doc
+
+    case "$1" in
+        --keys|-k)        doc="$base/keybindings.md" ;;
+        --workflow|-w)    doc="$base/workflow.md" ;;
+        --help|-h)
+            echo "resurrect - WezTerm session persistence helper"
+            echo ""
+            echo "Usage: resurrect [OPTION]"
+            echo ""
+            echo "Options:"
+            echo "  -w, --workflow     Show workflow guide (default)"
+            echo "  -k, --keys         Show keybindings"
+            echo "  -h, --help         Show this help message"
+            return 0
+            ;;
+        "")
+            doc="$base/workflow.md"
+            ;;
+        *)
+            echo "resurrect: unrecognized option '$1'" >&2
+            echo "Try 'resurrect --help' for more information." >&2
+            return 1
+            ;;
+    esac
+
+    [ -n "$doc" ] && cat "$doc"
+}
+RESURRECT
+    fi
+  fi
+fi
+
+# --- 9. Install Atuin shell history ---
 echo ""
 if command -v atuin &>/dev/null; then
   echo "Atuin already installed: $(atuin --version)"
@@ -147,42 +169,7 @@ else
   fi
 fi
 
-# --- 9. Shell integration (Starship + Atuin) ---
-SHELL_NAME="$(basename "$SHELL")"
-SHELL_RC=""
-case "$SHELL_NAME" in
-  zsh)  SHELL_RC="${HOME}/.zshrc" ;;
-  bash) SHELL_RC="${HOME}/.bashrc" ;;
-  fish) SHELL_RC="${HOME}/.config/fish/config.fish" ;;
-esac
-
-if [[ -n "$SHELL_RC" ]] && [[ -f "$SHELL_RC" ]]; then
-  # Starship
-  if command -v starship &>/dev/null; then
-    if ! grep -q "starship init" "$SHELL_RC" 2>/dev/null; then
-      echo "Adding Starship to $SHELL_RC..."
-      case "$SHELL_NAME" in
-        fish) echo 'starship init fish | source' >> "$SHELL_RC" ;;
-        *)    echo "eval \"\$(starship init $SHELL_NAME)\"" >> "$SHELL_RC" ;;
-      esac
-    fi
-  fi
-
-  # Atuin
-  if command -v atuin &>/dev/null; then
-    if ! grep -q "atuin init" "$SHELL_RC" 2>/dev/null; then
-      echo "Adding Atuin to $SHELL_RC..."
-      case "$SHELL_NAME" in
-        fish) echo 'if status is-interactive
-    atuin init fish | source
-end' >> "$SHELL_RC" ;;
-        *)    echo "eval \"\$(atuin init $SHELL_NAME)\"" >> "$SHELL_RC" ;;
-      esac
-    fi
-  fi
-fi
-
-# --- 10. Stats daemon (systemd) ---
+# --- 9. Stats daemon (systemd) ---
 echo ""
 echo "Installing stats daemon (CPU/RAM)..."
 
@@ -216,7 +203,7 @@ systemctl --user start wezterm-stats.service
 echo "Stats daemon installed and started."
 echo "Service file: $SYSTEMD_DIR/wezterm-stats.service"
 
-# --- 11. Summary ---
+# --- 10. Summary ---
 echo ""
 echo "=== Done ==="
 echo "Config installed to: $TARGET"
@@ -230,4 +217,4 @@ if command -v atuin &>/dev/null; then
 fi
 echo "Stats daemon: active (systemd)"
 echo ""
-echo "Restart your terminal or run: source $SHELL_RC"
+echo "Restart your terminal to apply changes."

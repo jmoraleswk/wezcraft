@@ -21,6 +21,14 @@ read -rp "Remove ~/.config/wezterm/? [y/N] " ANSWER
 if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
   rm -rf "${HOME}/.config/wezterm"
   echo "  Removed ~/.config/wezterm/"
+  # Remove resurrect() helper from .zshrc
+  SHELL_RC="${HOME}/.zshrc"
+  if [[ -f "$SHELL_RC" ]] && grep -q "resurrect()" "$SHELL_RC" 2>/dev/null; then
+    sed -i '' '/^resurrect() {/,/^}/d' "$SHELL_RC"
+    # Remove empty lines left after deletion
+    sed -i '' '/^$/N;/^\n$/d' "$SHELL_RC"
+    echo "  Removed resurrect() from shell config"
+  fi
 fi
 
 # --- 3. Prompt: remove session saves ---
@@ -31,43 +39,58 @@ if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
 fi
 
 # --- 4. Prompt: remove font ---
-if command -v brew &>/dev/null; then
+if [[ -f "${HOME}/Library/Fonts/FiraCodeNerdFont-Regular.ttf" ]]; then
   read -rp "Remove FiraCode Nerd Font? [y/N] " ANSWER
   if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
-    brew uninstall --cask font-firacode-nerd-font 2>/dev/null || true
+    brew uninstall --cask font-fira-code-nerd-font 2>/dev/null || true
+    rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFont-*.ttf
+    rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontMono-*.ttf
+    rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontPropo-*.ttf
     echo "  Removed FiraCode Nerd Font"
   fi
+fi
 
-  # --- 5. Prompt: remove starship ---
-  if command -v starship &>/dev/null; then
-    read -rp "Remove Starship? [y/N] " ANSWER
-    if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
-      brew uninstall starship 2>/dev/null || true
-      echo "  Removed Starship"
+# --- 5. Prompt: remove starship ---
+if command -v starship &>/dev/null; then
+  read -rp "Remove Starship? [y/N] " ANSWER
+  if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
+    brew uninstall starship 2>/dev/null || true
+    # Remove shell integration from .zshrc
+    SHELL_RC="${HOME}/.zshrc"
+    if [[ -f "$SHELL_RC" ]]; then
+      sed -i '' '/starship init/d' "$SHELL_RC"
+      echo "  Removed Starship from shell config"
     fi
+    echo "  Removed Starship"
   fi
+fi
 
-  # --- 6. Prompt: remove atuin ---
-  if command -v atuin &>/dev/null; then
-    read -rp "Remove Atuin? [y/N] " ANSWER
-    if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
-      brew uninstall atuin 2>/dev/null || true
-      echo "  Removed Atuin"
+# --- 6. Prompt: remove atuin ---
+if command -v atuin &>/dev/null; then
+  read -rp "Remove Atuin? [y/N] " ANSWER
+  if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
+    brew uninstall atuin 2>/dev/null || true
+    # Remove shell integration from .zshrc
+    SHELL_RC="${HOME}/.zshrc"
+    if [[ -f "$SHELL_RC" ]]; then
+      sed -i '' '/atuin init/d' "$SHELL_RC"
+      echo "  Removed Atuin from shell config"
     fi
+    echo "  Removed Atuin"
   fi
 fi
 
 # --- 7. Prompt: remove starship config ---
-STARSHIP_CONFIG="${HOME}/.config/starship.toml"
-if [[ -f "$STARSHIP_CONFIG" ]]; then
-  read -rp "Remove Starship config (~/.config/starship.toml)? [y/N] " ANSWER
+STARSHIP_CONFIG_DIR="${HOME}/.config/starship"
+if [[ -d "$STARSHIP_CONFIG_DIR" ]]; then
+  read -rp "Remove Starship config (~/.config/starship/)? [y/N] " ANSWER
   if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
-    rm "$STARSHIP_CONFIG"
+    rm -rf "$STARSHIP_CONFIG_DIR"
     echo "  Removed Starship config"
   fi
 fi
 
-# --- 8. Prompt: remove backups ---
+# --- 9. Prompt: remove backups ---
 BACKUPS=($(ls -d "${HOME}"/.config/wezterm.bak.* 2>/dev/null || true))
 if [[ ${#BACKUPS[@]} -gt 0 ]]; then
   echo "Found ${#BACKUPS[@]} backup(s):"

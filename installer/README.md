@@ -55,10 +55,10 @@ Set up your WezTerm configuration on a new machine.
 4. Creates required directories (`~/.local/share/wezterm/resurrect/`)
 5. Installs FiraCode Nerd Font via Homebrew
 6. Sets up launchd agent for live CPU/RAM stats
-7. Installs Starship prompt (if not already installed)
-8. Creates default Starship config
-9. Installs Atuin shell history (if not already installed)
-10. Checks shell integration
+7. Installs Starship prompt (if not already installed) + shell integration
+8. Creates Starship config with nerd-font-symbols preset (`~/.config/starship/starship.toml`)
+9. Installs Atuin shell history (if not already installed) + shell integration
+10. Adds `resurrect()` helper function to shell config
 
 ### Linux Install
 1. Clones repo from GitHub (or uses local source)
@@ -66,10 +66,10 @@ Set up your WezTerm configuration on a new machine.
 3. Copies config files (excluding non-essential dirs)
 4. Creates required directories (`~/.local/share/wezterm/resurrect/`)
 5. Installs FiraCode Nerd Font (manual download)
-6. Installs Starship prompt (if not already installed)
-7. Creates default Starship config
-8. Installs Atuin shell history (via official script)
-9. Checks shell integration
+6. Installs Starship prompt (if not already installed) + shell integration
+7. Creates Starship config with nerd-font-symbols preset (`~/.config/starship/starship.toml`)
+8. Installs Atuin shell history (via official script) + shell integration
+9. Adds `resurrect()` helper function to shell config
 
 ### Windows Install
 1. Clones repo from GitHub (or uses local source)
@@ -77,19 +77,22 @@ Set up your WezTerm configuration on a new machine.
 3. Copies config files (excluding non-essential dirs)
 4. Creates required directories (`~\AppData\Local\wezterm\resurrect\`)
 5. Installs FiraCode Nerd Font (automated download + extract)
-6. Installs Starship prompt via WinGet (if not already installed)
+6. Installs Starship prompt via WinGet (if not already installed) + shell integration
 7. Creates default Starship config
-8. Installs Atuin via WinGet (if not already installed)
-9. Auto-adds shell integration to PowerShell profile
+8. Installs Atuin via WinGet (if not already installed) + shell integration
 
 ### Uninstall (All Platforms)
 - Optionally removes: config, session saves, font, starship, starship config, atuin, backups
+- Automatically removes shell integration (starship init, atuin init, resurrect() helper)
 
 ## Notes
 
 - Installer pulls latest config from GitHub — no bundling needed
 - The resurrect.wezterm plugin is included in the repo
-- Stats daemon (CPU/RAM) is only available on macOS (launchd)
+- Stats daemon (CPU/RAM) runs on all platforms:
+  - macOS: launchd agent
+  - Linux: systemd user service
+  - Windows: Task Scheduler
 - Starship prompt is installed automatically if not present
 - Atuin shell history is installed automatically if not present
 - Backup files are timestamped: `~/.config/wezterm.bak.<timestamp>`

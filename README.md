@@ -12,31 +12,43 @@ Modular WezTerm terminal configuration with cross-platform installer.
 
 ## Quick Start
 
-### Using the Installer (Recommended)
+### Option 1: One-liner (Recommended)
 
 ```bash
-# Clone the repo
-git clone https://github.com/jmoraleswk/wezcraft.git
-cd wezcraft
-
-# Run installer (auto-detects OS)
-./installer/install.sh
+# macOS/Linux - install directly from GitHub
+curl -fsSL https://raw.githubusercontent.com/jmoraleswk/wezcraft/main/installer/install.sh | bash -s -- --tui
 ```
 
-The installer will:
-- Install FiraCode Nerd Font (auto-download if needed)
-- Install Starship prompt (optional)
-- Install Atuin shell history (optional)
-- Configure shell integration automatically
-- Start stats daemon (CPU/RAM) in background
+This will:
+1. Clone the repo to a temp directory
+2. Auto-install fzf if needed
+3. Launch interactive TUI installer
+4. Clean up temp files when done
 
-### Manual Setup
+### Option 2: Clone and Run
+
+```bash
+git clone https://github.com/jmoraleswk/wezcraft.git
+cd wezcraft
+./installer/install.sh --tui
+```
+
+### Option 3: Manual Setup
 
 ```bash
 mkdir -p ~/.config/wezterm
 cp wezterm.lua ~/.config/wezterm/
 cp -r themes constants utils commands assets elements ~/.config/wezterm/
 ```
+
+### What the Installer Does
+
+- Installs FiraCode Nerd Font (auto-download if needed)
+- Installs Starship prompt (optional) with nerd-font-symbols preset
+- Installs Atuin shell history (optional)
+- Configures shell integration automatically (starship init, atuin init)
+- Adds `resurrect()` helper function to shell config
+- Starts stats daemon (CPU/RAM) in background
 
 ## Requirements
 

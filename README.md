@@ -90,9 +90,10 @@ The stats daemon runs automatically on all platforms:
 
 ## Usage
 
+- **ALT+T** — Switch theme (fuzzy picker)
 - **CMD+Shift+P** — Command palette
   - **Toggle terminal transparency** — Only works with default theme (shows error otherwise)
-  - **Toggle theme** — Switch between default and kanagawa
+  - **Switch theme** — Fuzzy picker to select any available theme
 - **CMD+Shift+L** — Debug logs
 - `resurrect` — Session persistence quick reference ([full docs](elements/resurrect/README.md))
 

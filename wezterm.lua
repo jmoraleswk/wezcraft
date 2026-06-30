@@ -39,28 +39,6 @@ else
 end
 
 -- ======================
--- TOGGLE THEME (runtime)
--- ======================
-local status_utils = require("utils.status")
-
-wezterm.on("toggle-theme", function(window)
-  local current = theme_utils.get_active_theme()
-  local next_theme = current == "kanagawa" and "default" or "kanagawa"
-  local file, err = io.open(globals.ACTIVE_THEME_FILE, "w")
-  if not file then
-    local msg = "Failed to write active theme: " .. (err or "unknown error")
-    wezterm.log_error(msg)
-    status_utils.set_status_message(window, "Error: " .. msg, 5)
-    return
-  end
-  file:write(wezterm.json_encode({
-    active_theme = next_theme
-  }))
-  file:close()
-  wezterm.reload_configuration()
-end)
-
--- ======================
 -- STATUS BAR
 -- ======================
 local statusbar = require("elements.statusbar.config")
@@ -79,6 +57,8 @@ end
 -- ======================
 -- SHORTCUTS
 -- ======================
+local theme_switcher = require("elements.theme-switcher")
+
 config.keys = {
   -- Close current panel (requires confirmation)
   {
@@ -97,6 +77,14 @@ config.keys = {
     key = '5',
     mods = 'CTRL|CMD',
     action = wezterm.action.SplitVertical { domain = "CurrentPaneDomain" },
+  },
+  -- Switch theme (ALT + T)
+  {
+    key = 't',
+    mods = 'ALT',
+    action = wezterm.action_callback(function(window, pane)
+      theme_switcher.pick_theme(window, pane)
+    end),
   },
   -- Go to END of word (Option + Right Arrow)
   {

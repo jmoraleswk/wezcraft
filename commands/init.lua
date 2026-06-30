@@ -1,9 +1,9 @@
 local toggle_transparency = require('commands.toggle-transparency')
-local toggle_theme = require('commands.toggle-theme')
+local switch_theme = require('commands.switch-theme')
 
 local M = {
   toggle_transparency,
-  toggle_theme,
+  switch_theme,
 }
 
 return M

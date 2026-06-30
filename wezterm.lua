@@ -122,6 +122,24 @@ config.keys = {
     mods = 'ALT',
     action = wezterm.action.SendString("#"),
   },
+  -- pipe (ALT + 1)
+  {
+    key = '¡',
+    mods = 'ALT',
+    action = wezterm.action.SendString("|"),
+  },
+  -- closing bracket (ALT + +)
+  {
+    key = '+',
+    mods = 'ALT',
+    action = wezterm.action.SendString("]"),
+  },
+  -- closing brace (ALT + ç)
+  {
+    key = 'ç',
+    mods = 'ALT',
+    action = wezterm.action.SendString("}"),
+  },
 }
 
 -- ======================

@@ -1,4 +1,4 @@
-# wezcraft-base
+# WezCraft
 
 Modular WezTerm terminal configuration with cross-platform installer.
 
@@ -68,6 +68,7 @@ cp -r themes constants utils commands assets elements ~/.config/wezterm/
 - `assets/` — Background images and resources
 - `elements/resurrect/` — Session persistence config ([docs](elements/resurrect/README.md))
 - `elements/statusbar/` — Status bar config and stats daemon scripts
+- `elements/theme-switcher/` — Dynamic theme switcher with fuzzy picker
 - `installer/` — Cross-platform installer ([docs](installer/README.md))
 
 ## Themes
@@ -90,7 +91,15 @@ The stats daemon runs automatically on all platforms:
 
 ## Usage
 
-- **ALT+T** — Switch theme (fuzzy picker)
+- **ALT + T** — Switch theme (fuzzy picker)
+- **ALT + 1** — Pipe character (`|`)
+- **ALT + 2** — At sign (`@`)
+- **ALT + 3** — Hash (`#`)
+- **ALT + ñ** — Tilde (`~`)
+- **ALT + º** — Backslash (`\`)
+- **ALT + º** — Backslash (`\`)
+- **ALT + +** — Closing bracket (`]`)
+- **ALT + ç** — Closing brace (`}`)
 - **CMD+Shift+P** — Command palette
   - **Toggle terminal transparency** — Only works with default theme (shows error otherwise)
   - **Switch theme** — Fuzzy picker to select any available theme
@@ -116,4 +125,4 @@ See [installer/README.md](installer/README.md) for detailed documentation includ
 
 ### Command Palette Notes
 
-Commands appear in the palette regardless of the active theme. The transparency toggle checks the theme at runtime and shows an error if not in default theme. Future improvement: conditionally register commands based on theme capabilities.
+Commands appear in the palette regardless of the active theme. The transparency toggle checks the theme at runtime and shows an error if not in default theme.

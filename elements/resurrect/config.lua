@@ -1,7 +1,7 @@
 -- File: resurrect/config.lua
 -- resurrect.wezterm configuration and settings
 --
--- Inspired by Matthew Weimer's resurrect.wezterm configuration (mwop.net).
+-- Original structure by Matthew Weimer (mwop.net).
 -- Enhancement and enrichment for WezCraft:
 --   - Local plugin require instead of remote GitHub fetch
 --   - Custom state save directory (~/.local/share/wezterm/resurrect/)
@@ -17,7 +17,6 @@
 -- * Configures custom pane restore (fullscreen apps only)
 -- * Sets up encryption (age), periodic save, and state directory
 -- * Returns wezterm keybinding configuration for resurrect-related actions.
-
 local config  = {}
 local wezterm = require('wezterm')
 

@@ -66,9 +66,14 @@ function M.setup(wezterm_module, _config)
     local COLORS = theme_utils.get_statusbar_colors()
 
     -- Check for temporary status message first
-    local status_message = status_utils.get_status_message(window)
+    local status_message, message_color = status_utils.get_status_message(window)
     if status_message then
-      window:set_right_status(status_message)
+      local msg_elements = {}
+      if message_color then
+        table.insert(msg_elements, { Foreground = { Color = message_color } })
+      end
+      table.insert(msg_elements, { Text = status_message })
+      window:set_right_status(wezterm_module.format(msg_elements))
       return
     end
 

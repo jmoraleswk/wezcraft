@@ -27,8 +27,9 @@ local command = {
       )
       status_utils.set_status_message(
         window,
-        "Only available in \"default\" theme (current: " .. theme .. ")",
-        1
+        "❌ Only available in \"default\" theme (current: " .. theme .. ")",
+        3,
+        "#f7768e"
       )
       return
     end

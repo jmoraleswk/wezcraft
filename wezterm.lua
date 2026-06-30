@@ -6,7 +6,7 @@ local config = wezterm.config_builder()
 -- ======================
 config.window_close_confirmation = "AlwaysPrompt"
 
-config.status_update_interval = 5000
+config.status_update_interval = 3000
 
 config.leader = { key = 'a', mods = 'CTRL', timeout_milliseconds = 2000 }
 

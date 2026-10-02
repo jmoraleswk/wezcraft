@@ -22,14 +22,16 @@ check_fzf() {
         echo ""
         
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS
-            if command -v brew &>/dev/null; then
-                brew install fzf
-            else
-                echo -e "${RED}Error: Homebrew not found. Install manually:${NC}"
-                echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+            # macOS — Homebrew preferred, MacPorts fallback (shared layer)
+            source "$(dirname "${BASH_SOURCE[0]}")/scripts/pkg.sh"
+            detect_pkg_manager
+            if [[ -z "$PKG_MANAGER" ]]; then
+                echo -e "${RED}Error: No supported package manager found (Homebrew or MacPorts). Install manually:${NC}"
+                echo "  Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+                echo "  MacPorts: https://www.macports.org/install.php"
                 exit 1
             fi
+            pkg_install cli fzf
         elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
             # Linux
             if command -v apt &>/dev/null; then
@@ -165,7 +167,7 @@ show_progress() {
 main() {
     # Resolve and validate the source BEFORE anything with side effects:
     # a missing-source invocation must fail fast instead of triggering
-    # check_fzf (which may run `brew install fzf`).
+    # check_fzf (which may install fzf through the package-manager layer).
     local source_dir=""
     while [[ $# -gt 0 ]]; do
         case "$1" in

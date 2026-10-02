@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Package-manager abstraction (Homebrew, MacPorts fallback)
+source "$(dirname "${BASH_SOURCE[0]}")/pkg.sh"
+
 SOURCE="$1"
 TARGET="${HOME}/.config/wezterm"
 
@@ -9,10 +12,10 @@ echo "Source: $SOURCE"
 echo "Target: $TARGET"
 echo ""
 
-# --- 1. Check brew ---
-if ! command -v brew &>/dev/null; then
-  echo "Error: Homebrew not found. Install it first:"
-  echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+# --- 1. Check package manager (Homebrew or MacPorts) ---
+detect_pkg_manager
+if [[ -z "$PKG_MANAGER" ]]; then
+  pkg_error_no_manager
   exit 1
 fi
 
@@ -56,7 +59,7 @@ else
   rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFont-*.ttf
   rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontMono-*.ttf
   rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontPropo-*.ttf
-  brew install --cask font-fira-code-nerd-font 2>/dev/null || true
+  pkg_install font font-fira-code-nerd-font 2>/dev/null || true
 fi
 
 # --- 7. Setup launchd agent ---
@@ -99,7 +102,7 @@ else
   INSTALL_STARSHIP="${INSTALL_STARSHIP:-Y}"
   if [[ "$INSTALL_STARSHIP" =~ ^[Yy]$ ]]; then
     echo "Installing Starship..."
-    brew install starship
+    pkg_install cli starship
     echo "Starship installed."
   fi
 fi
@@ -181,7 +184,7 @@ else
   INSTALL_ATUIN="${INSTALL_ATUIN:-Y}"
   if [[ "$INSTALL_ATUIN" =~ ^[Yy]$ ]]; then
     echo "Installing Atuin..."
-    brew install atuin
+    pkg_install cli atuin
     echo "Atuin installed."
   fi
 fi

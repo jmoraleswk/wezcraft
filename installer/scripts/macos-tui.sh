@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Package-manager abstraction (Homebrew, MacPorts fallback)
+source "$(dirname "${BASH_SOURCE[0]}")/pkg.sh"
+
 # WezCraft macOS TUI Installer
 # Called from tui-install.sh with component flags
 
@@ -58,7 +61,7 @@ rsync -a --exclude='.git' \
 mkdir -p "${HOME}/.local/share/wezterm/resurrect"
 mkdir -p "${HOME}/.local/state/wezterm"
 
-# --- 4. Install font (Homebrew) ---
+# --- 4. Install font (Homebrew or MacPorts) ---
 if [[ "$FONT_INSTALL" == "true" ]]; then
     echo ""
     echo "Installing FiraCode Nerd Font..."
@@ -69,7 +72,7 @@ if [[ "$FONT_INSTALL" == "true" ]]; then
         rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFont-*.ttf
         rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontMono-*.ttf
         rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontPropo-*.ttf
-        brew install --cask font-fira-code-nerd-font
+        pkg_install font font-fira-code-nerd-font
         echo -e "${GREEN}✓ FiraCode Nerd Font installed${NC}"
     fi
 fi
@@ -79,7 +82,7 @@ if [[ "$STARSHIP_INSTALL" == "true" ]]; then
     echo ""
     if ! command -v starship &>/dev/null; then
         echo "Installing Starship..."
-        brew install starship
+        pkg_install cli starship
         echo -e "${GREEN}✓ Starship installed${NC}"
     else
         echo -e "${YELLOW}⊘ Starship already installed${NC}"
@@ -158,7 +161,7 @@ if [[ "$ATUIN_INSTALL" == "true" ]]; then
     echo ""
     if ! command -v atuin &>/dev/null; then
         echo "Installing Atuin..."
-        brew install atuin
+        pkg_install cli atuin
         echo -e "${GREEN}✓ Atuin installed${NC}"
     else
         echo -e "${YELLOW}⊘ Atuin already installed${NC}"

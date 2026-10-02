@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Package-manager abstraction (Homebrew, MacPorts fallback)
+source "$(dirname "${BASH_SOURCE[0]}")/pkg.sh"
+
 echo "=== WezTerm Uninstaller (macOS) ==="
 echo ""
 
@@ -42,7 +45,7 @@ fi
 if [[ -f "${HOME}/Library/Fonts/FiraCodeNerdFont-Regular.ttf" ]]; then
   read -rp "Remove FiraCode Nerd Font? [y/N] " ANSWER
   if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
-    brew uninstall --cask font-fira-code-nerd-font 2>/dev/null || true
+    pkg_uninstall font font-fira-code-nerd-font 2>/dev/null || true
     rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFont-*.ttf
     rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontMono-*.ttf
     rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontPropo-*.ttf
@@ -54,7 +57,7 @@ fi
 if command -v starship &>/dev/null; then
   read -rp "Remove Starship? [y/N] " ANSWER
   if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
-    brew uninstall starship 2>/dev/null || true
+    pkg_uninstall cli starship 2>/dev/null || true
     # Remove shell integration from .zshrc
     SHELL_RC="${HOME}/.zshrc"
     if [[ -f "$SHELL_RC" ]]; then
@@ -69,7 +72,7 @@ fi
 if command -v atuin &>/dev/null; then
   read -rp "Remove Atuin? [y/N] " ANSWER
   if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
-    brew uninstall atuin 2>/dev/null || true
+    pkg_uninstall cli atuin 2>/dev/null || true
     # Remove shell integration from .zshrc
     SHELL_RC="${HOME}/.zshrc"
     if [[ -f "$SHELL_RC" ]]; then

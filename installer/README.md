@@ -5,8 +5,32 @@ Set up your WezTerm configuration on a new machine.
 ## Requirements
 
 ### macOS
-- [Homebrew](https://brew.sh)
+- [Homebrew](https://brew.sh) or [MacPorts](https://www.macports.org/) — Homebrew is preferred when both are installed
 - git (Xcode Command Line Tools)
+
+#### Why MacPorts is a first-class fallback
+
+This is not belt-and-suspenders: Homebrew's own support policy is why the
+MacPorts path exists (see [Homebrew Support Tiers](https://docs.brew.sh/Support-Tiers)):
+
+- **September 2026** — Homebrew moved macOS Intel `x86_64` to **Tier 3**:
+  Homebrew keeps running, but no new bottles (prebuilt binaries) are built,
+  so installs and upgrades fall back to compiling from source, and the
+  official `.pkg` installer is Apple Silicon only.
+- **September 2027** — Homebrew drops macOS Intel support entirely.
+
+Homebrew's own 7.0.0 announcement states it plainly: *"MacPorts still
+supports macOS Intel x86_64 and is likely to provide better results on this
+platform."* On Intel Macs, MacPorts ships complete binary packages today,
+which makes it the reliable package manager there — so the installer treats
+it as a supported path, not an afterthought.
+
+On MacPorts-only systems (no Homebrew), the FiraCode Nerd Font step
+downloads a pinned, SHA-256-verified nerd-fonts release into
+`~/Library/Fonts` (see the fallback chain below), degrading to the
+symbols-only font (no ligatures) when offline. MacPorts installs need
+administrator rights, so `port install` runs through `sudo` (it prompts on
+the terminal); any port you already had is left untouched.
 
 ### Linux
 - git
@@ -83,7 +107,7 @@ directly without `--source` exits with an error before any side effects.
 2. Backs up existing `~/.config/wezterm/` (timestamped)
 3. Copies config files (excluding non-essential dirs)
 4. Creates required directories (`~/.local/share/wezterm/resurrect/`)
-5. Installs FiraCode Nerd Font via Homebrew
+5. Installs FiraCode Nerd Font (Homebrew cask; on MacPorts-only systems: pinned SHA-256-verified download from the official nerd-fonts release, symbols-only fallback when offline)
 6. Sets up launchd agent for live CPU/RAM stats
 7. Installs Starship prompt (if not already installed) + shell integration
 8. Creates Starship config with nerd-font-symbols preset (`~/.config/starship/starship.toml`)
@@ -117,6 +141,27 @@ directly without `--source` exits with an error before any side effects.
 
 ## Notes
 
+- **macOS font fallback chain (MacPorts-only systems)** — Homebrew installs
+  the font as a cask and needs no chain. Without Homebrew, `pkg_install font`
+  escalates in order:
+  1. Download the **pinned** `FiraCode.zip` (`v3.5.1`) and verify its
+     **SHA-256** against the release's `SHA-256.txt`; refuse to install on
+     mismatch. The mutable `latest` URL is intentionally not used: bytes
+     that can change without notice cannot be verified.
+  2. If that fails (offline, asset missing, checksum mismatch):
+     `sudo port install ttf-nerd-fonts-symbols` +
+     `sudo port install dejavu-fonts` — status-bar icons and base text keep
+     working, ligatures are lost, and a yellow warning explains that. A port
+     you already had is never reinstalled, and the uninstaller removes only
+     the ports this installer actually installed.
+
+  Why it matters: MacPorts ships **no ligature monospace font at all** (no
+  FiraCode, JetBrains Mono, Hack, …), and its only Nerd Font port is the
+  symbols-only one — hence the direct download as the primary path.
+- **MacPorts needs administrator rights** — it installs into `/opt/local`,
+  so `port install`/`port uninstall` run through `sudo`. When no terminal is
+  available to prompt for a password (e.g. a fully non-interactive run), the
+  installer fails with an actionable message instead of hanging.
 - One-liner (`curl | bash`) installs pull the latest config from GitHub — no bundling needed; local checkouts install their own files
 - The resurrect.wezterm plugin is included in the repo
 - Stats daemon (CPU/RAM) runs on all platforms:

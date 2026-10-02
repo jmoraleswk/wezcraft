@@ -29,3 +29,6 @@ codebase/*
 docs/*
 # Local Pi runtime state
 .atl/
+
+# Local CodeGraph index (regenerable with `codegraph init`)
+.codegraph/

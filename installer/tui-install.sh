@@ -3,6 +3,7 @@ set -euo pipefail
 
 # WezCraft TUI Installer
 # Interactive installer using fzf for component selection
+# Internal — invoked via installer/install.sh, which always passes --source.
 
 # Colors
 RED='\033[0;31m'
@@ -162,10 +163,9 @@ show_progress() {
 
 # Main installation logic
 main() {
-    check_fzf
-    show_banner
-    
-    # Parse --source parameter
+    # Resolve and validate the source BEFORE anything with side effects:
+    # a missing-source invocation must fail fast instead of triggering
+    # check_fzf (which may run `brew install fzf`).
     local source_dir=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -173,28 +173,20 @@ main() {
             *) shift ;;
         esac
     done
-    
-    # Check if running from repo or needs to clone
+
     if [[ -z "$source_dir" ]]; then
-        if [[ -d "$(dirname "$0")/../wezterm.lua" ]]; then
-            source_dir="$(dirname "$0")/.."
-        fi
+        echo -e "${RED}Error: --source is required.${NC}"
+        echo "Run this script via installer/install.sh, or pass --source <path>."
+        exit 1
     fi
-    
-    if [[ -z "$source_dir" ]]; then
-        echo -e "${YELLOW}Cloning repository...${NC}"
-        local tmpdir
-        tmpdir="$(mktemp -d)"
-        trap 'rm -rf "$tmpdir"' EXIT
-        
-        if ! command -v git &>/dev/null; then
-            echo -e "${RED}Error: git not found${NC}"
-            exit 1
-        fi
-        
-        git clone --depth 1 "https://github.com/jmoraleswk/wezcraft" "$tmpdir/wezcraft" 2>/dev/null
-        source_dir="$tmpdir/wezcraft"
+
+    if [[ ! -d "$source_dir" ]]; then
+        echo -e "${RED}Error: Source directory not found: $source_dir${NC}"
+        exit 1
     fi
+
+    check_fzf
+    show_banner
     
     # Select components
     local selected

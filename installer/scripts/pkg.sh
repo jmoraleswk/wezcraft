@@ -160,14 +160,15 @@ _pkg_sha256() {
 # failure so the caller can fall back to ports.
 _pkg_font_download_macports() {
   local font_dir="${HOME}/Library/Fonts"
-  local tmp_dir f base total rc=1 copied=0 actual
+  local tmp_dir f base total rc=1 copied=0 actual old_trap
 
   command -v unzip >/dev/null 2>&1 || return 1
   tmp_dir="$(mktemp -d 2>/dev/null)" || return 1
   # Expand $tmp_dir NOW (double quotes, not single): the trap must clean
   # the exact directory even if the shell exits while these locals are
-  # still in scope. Cleared with `trap - EXIT` before every return so the
-  # trap never leaks into the calling installer script.
+  # still in scope. Any EXIT trap the caller already had is saved first and
+  # restored at the end, so this never clobbers it.
+  old_trap="$(trap -p EXIT)"
   trap "rm -rf -- '$tmp_dir'" EXIT
 
   if _pkg_fetch "$_PKG_FONT_URL" "$tmp_dir/FiraCode.zip"; then
@@ -208,8 +209,13 @@ _pkg_font_download_macports() {
     fi
   fi
 
-  trap - EXIT
   rm -rf -- "$tmp_dir"
+  # Restore the caller's EXIT trap (or clear ours when there was none).
+  if [ -n "$old_trap" ]; then
+    eval "$old_trap"
+  else
+    trap - EXIT
+  fi
   return $rc
 }
 

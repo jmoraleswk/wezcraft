@@ -16,8 +16,9 @@ echo ""
 # --- 1. Check package manager (MacPorts on Intel, Homebrew on arm64) ---
 detect_pkg_manager
 if [[ -z "$PKG_MANAGER" ]]; then
-  # Intel without MacPorts: consent flow before giving up
-  # (no-op elsewhere; exit 1 on decline/failure).
+  # Required manager missing (MacPorts on Intel, Homebrew on Apple
+  # Silicon): consent flow before giving up (no-op on any other
+  # architecture; exit 1 on decline/failure).
   pkg_bootstrap_manager
 fi
 if [[ -z "$PKG_MANAGER" ]]; then

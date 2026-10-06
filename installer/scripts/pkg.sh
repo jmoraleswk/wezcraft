@@ -6,8 +6,10 @@
 #
 # Public API:
 #   detect_pkg_manager            # sets PKG_MANAGER to "brew", "macports", or ""
-#   pkg_bootstrap_manager         # Intel-only consent flow to install MacPorts
-#                                 # (no-op elsewhere; exit 1 on decline/failure)
+#   pkg_bootstrap_manager         # arch-gated consent flow to install the
+#                                 # required manager (MacPorts on Intel,
+#                                 # Homebrew on Apple Silicon); no-op on any
+#                                 # other architecture; exit 1 on decline/failure
 #   pkg_error_no_manager          # actionable "install one of these" error
 #   pkg_install <kind> <name>     # kind: cli | font
 #   pkg_uninstall <kind> <name>   # kind: cli | font
@@ -36,8 +38,9 @@
 # accepted as a fallback. brew is never selected on Intel. Any other
 # architecture leaves PKG_MANAGER empty. Idempotent: PKG_MANAGER is always
 # (re)assigned, including to the empty string when the required manager is
-# missing. On Intel an empty result is the caller's cue to run
-# pkg_bootstrap_manager before giving up (see the bootstrap section).
+# missing. On Intel or Apple Silicon an empty result is the caller's cue
+# to run pkg_bootstrap_manager before giving up (see the bootstrap
+# sections).
 detect_pkg_manager() {
   PKG_MANAGER=""
   case "$(uname -m)" in
@@ -72,8 +75,8 @@ _pkg_font_manager() {
 # --- Intel MacPorts bootstrap -----------------------------------------------
 # On Intel (x86_64) the arch rule leaves PKG_MANAGER empty when MacPorts is
 # missing (brew must not be used for packages there). Before giving up,
-# pkg_bootstrap_manager runs this consent flow: an explicit /dev/tty prompt,
-# then a pinned MacPorts .pkg install. Consent is NEVER silent and NEVER
+# pkg_bootstrap_manager dispatches here: an explicit /dev/tty prompt, then a
+# pinned MacPorts .pkg install. Consent is NEVER silent and NEVER
 # read from piped stdin -- running `sudo installer` on a .pkg is the user's
 # decision -- and with no terminal available it fails closed to the abort
 # message. Declining, missing sudo, an unpublished .pkg for this macOS
@@ -161,12 +164,12 @@ _pkg_macports_try_install() {
   return $rc
 }
 
-# pkg_bootstrap_manager — Intel-only consent flow, called when the arch rule
-# left PKG_MANAGER empty. On success PKG_MANAGER becomes "macports" and
-# /opt/local/bin has been exported onto PATH; otherwise it never returns
-# (exit 1). A no-op everywhere else, so callers keep their existing error
-# path (arm64 without Homebrew, unsupported architecture, font routing).
-pkg_bootstrap_manager() {
+# _pkg_macports_bootstrap — Intel (x86_64) consent flow, reached only
+# through pkg_bootstrap_manager. On success PKG_MANAGER becomes "macports"
+# and /opt/local/bin has been exported onto PATH; otherwise it never
+# returns (exit 1). A no-op on any other architecture, so it can never
+# overlap the Apple Silicon Homebrew flow.
+_pkg_macports_bootstrap() {
   local reply attempt pkg_name
 
   case "$(uname -m)" in
@@ -226,6 +229,113 @@ pkg_bootstrap_manager() {
     attempt=$((attempt + 1))
   done
   _pkg_macports_abort
+}
+
+# --- Apple Silicon Homebrew bootstrap ---------------------------------------
+# On Apple Silicon (arm64) the arch rule leaves PKG_MANAGER empty when
+# Homebrew is missing (MacPorts is NOT accepted as a fallback there). Before
+# giving up, pkg_bootstrap_manager dispatches here: an explicit /dev/tty
+# consent prompt (same rules as the Intel flow: NEVER silent, NEVER read
+# from piped stdin, fails closed to the abort message without a terminal),
+# then the official Homebrew installer run non-interactively -- the consent
+# decision was already made at the prompt. Declining or exhausting the 2
+# allowed attempts ends in _pkg_brew_abort (abort message + exit 1).
+# Bash 3.2 compatible, safe under `set -euo pipefail`.
+
+# Abort message -- used for decline AND for failure (after retries, or when
+# no terminal is available for consent). Never returns.
+_pkg_brew_abort() {
+  echo "Error: Homebrew is required to install WezCraft dependencies on Apple Silicon (arm64)." >&2
+  echo "Installation aborted. Install Homebrew manually and run the installer again:" >&2
+  echo "  https://brew.sh" >&2
+  exit 1
+}
+
+# One install attempt: run the official Homebrew installer
+# non-interactively (NONINTERACTIVE=1 -- consent was already given at the
+# prompt), then make brew visible in THIS shell -- CRITICAL: a shell that
+# is already running never picks up /opt/homebrew/bin (same class of bug as
+# the /etc/paths.d note in _pkg_macports_try_install): `eval
+# "$(/opt/homebrew/bin/brew shellenv)"` when that binary exists, otherwise
+# export /opt/homebrew/bin and let `command -v brew` resolve. Returns 1 on
+# any failed step so the caller can retry once.
+_pkg_brew_try_install() {
+  if ! NONINTERACTIVE=1 /bin/bash -c \
+    "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
+    return 1
+  fi
+  if [ -x /opt/homebrew/bin/brew ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)" || return 1
+  else
+    export PATH="/opt/homebrew/bin:$PATH"
+  fi
+  command -v brew >/dev/null 2>&1 && brew --version >/dev/null 2>&1
+}
+
+# _pkg_brew_bootstrap — Apple Silicon (arm64) consent flow, reached only
+# through pkg_bootstrap_manager. On success PKG_MANAGER becomes "brew" and
+# brew has been made visible on PATH; otherwise it never returns (exit 1):
+# decline, missing terminal, or exhausted retries. A no-op on any other
+# architecture, so it can never overlap the Intel MacPorts flow.
+_pkg_brew_bootstrap() {
+  local reply attempt
+
+  case "$(uname -m)" in
+    arm64) ;;
+    *) return 0 ;;
+  esac
+  if command -v brew >/dev/null 2>&1; then
+    PKG_MANAGER="brew"
+    return 0
+  fi
+
+  # Consent prompt on the controlling terminal (/dev/tty), never piped
+  # stdin. The group's stderr is silenced before /dev/tty is opened, so a
+  # missing terminal fails closed: quietly, with only the abort message
+  # below as output.
+  if ! {
+    printf '%s\n' \
+      '⚠ Apple Silicon Mac detected (arm64).' \
+      'Homebrew is required to install WezCraft dependencies on this architecture.' \
+      '' \
+      'Install Homebrew now? [Y/n]' \
+      '  https://brew.sh'
+  } 2>/dev/null > /dev/tty; then
+    _pkg_brew_abort
+  fi
+
+  reply=""
+  IFS= read -r reply < /dev/tty || reply="n" # EOF counts as decline
+  case "$reply" in
+    ""|Y|y) ;;
+    *) _pkg_brew_abort ;;
+  esac
+
+  # Maximum 2 attempts total (initial + one retry).
+  attempt=1
+  while [ "$attempt" -le 2 ]; do
+    if _pkg_brew_try_install; then
+      PKG_MANAGER="brew"
+      return 0
+    fi
+    attempt=$((attempt + 1))
+  done
+  _pkg_brew_abort
+}
+
+# pkg_bootstrap_manager — public entry point, called at every give-up site
+# when the arch rule left PKG_MANAGER empty. Dispatches on `uname -m`: the
+# MacPorts consent flow on Intel (x86_64), the Homebrew consent flow on
+# Apple Silicon (arm64), a no-op on any other architecture so callers keep
+# their existing error path. The two flows are mutually exclusive (each is
+# gated on its own architecture), so they can never overlap. Either flow
+# sets PKG_MANAGER or never returns (exit 1 on decline/failure).
+pkg_bootstrap_manager() {
+  case "$(uname -m)" in
+    x86_64) _pkg_macports_bootstrap ;;
+    arm64)  _pkg_brew_bootstrap ;;
+    *)      return 0 ;;
+  esac
 }
 
 # Run a `port` subcommand with the privileges MacPorts needs. MacPorts
@@ -478,8 +588,9 @@ pkg_install() {
     detect_pkg_manager
     manager="$PKG_MANAGER"
     if [ -z "$manager" ]; then
-      # Intel without MacPorts: run the consent flow before giving up.
-      # No-op on other architectures; never returns on decline/failure.
+      # Required manager missing (MacPorts on Intel, Homebrew on Apple
+      # Silicon): arch-gated consent flow before giving up (no-op on any
+      # other architecture; never returns on decline/failure).
       pkg_bootstrap_manager
       manager="$PKG_MANAGER"
     fi
@@ -533,8 +644,9 @@ pkg_uninstall() {
     detect_pkg_manager
     manager="$PKG_MANAGER"
     if [ -z "$manager" ]; then
-      # Intel without MacPorts: run the consent flow before giving up.
-      # No-op on other architectures; never returns on decline/failure.
+      # Required manager missing (MacPorts on Intel, Homebrew on Apple
+      # Silicon): arch-gated consent flow before giving up (no-op on any
+      # other architecture; never returns on decline/failure).
       pkg_bootstrap_manager
       manager="$PKG_MANAGER"
     fi

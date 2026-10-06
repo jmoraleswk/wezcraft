@@ -15,9 +15,12 @@
 #   pkg_uninstall <kind> <name>   # kind: cli | font
 #
 # MacPorts needs administrator rights (it installs into /opt/local), so all
-# `port` calls go through a sudo wrapper. The MacPorts font path downloads a
-# pinned, SHA-256-verified nerd-fonts release instead of the unverifiable
-# mutable "latest" URL.
+# `port` calls go through a sudo wrapper. The font source is decided in
+# exactly ONE place (_pkg_font_source): the Homebrew cask whenever brew
+# exists — on any architecture, this is the one place brew is allowed on
+# Intel — and otherwise a pinned, SHA-256-verified nerd-fonts release zip
+# (never the unverifiable mutable "latest" URL) extracted into
+# ~/Library/Fonts, which needs NO package manager at all.
 #
 # Bash 3.2 compatible (macOS /bin/bash): no associative arrays, no ${var,,}.
 # Safe for callers running under `set -euo pipefail`.
@@ -57,18 +60,23 @@ detect_pkg_manager() {
   esac
 }
 
-# _pkg_font_manager — manager selection for the `font` kind ONLY. Fonts keep
-# the ORIGINAL brew-first rule (brew cask when Homebrew exists, else the
-# MacPorts zip path in _pkg_font_macports): the CPU-arch rule above applies
-# to packages, NOT to fonts, so font install/uninstall behaves exactly as
-# before on every architecture. Centralizing the font manager is a later
-# change; do not fold this into detect_pkg_manager without updating the
-# font flow.
-_pkg_font_manager() {
+# _pkg_font_source — THE single owner of the font source decision, called by
+# BOTH pkg_install and pkg_uninstall for the `font` kind ("two owners of the
+# font decision" is exactly what this function exists to prevent). It does
+# NOT read PKG_MANAGER and does NOT apply the CPU-arch rule above: brew may
+# serve fonts even on Intel — the one place Homebrew is allowed there — and
+# when brew is missing the font comes from the pinned zip path
+# (_pkg_font_macports), which needs NO package manager, so a missing manager
+# can never block a font and pkg_bootstrap_manager is never triggered for
+# this kind.
+# Prints "brew" (cask install/uninstall) or "zip" (pinned, SHA-256-verified
+# download into ~/Library/Fonts, degrading to MacPorts ports when the
+# download fails).
+_pkg_font_source() {
   if command -v brew >/dev/null 2>&1; then
     echo "brew"
-  elif command -v port >/dev/null 2>&1; then
-    echo "macports"
+  else
+    echo "zip"
   fi
 }
 
@@ -548,8 +556,8 @@ _pkg_font_fallback_macports() {
   return $rc
 }
 
-# _pkg_font_macports — entry point for `pkg_install font` when the font
-# routing picks MacPorts (never reached when Homebrew is installed).
+# _pkg_font_macports — zip path for `pkg_install font`, reached only when
+# _pkg_font_source picks "zip" (brew absent on any architecture).
 _pkg_font_macports() {
   if _pkg_font_download_macports; then
     return 0
@@ -567,52 +575,85 @@ _pkg_font_macports() {
   return 0
 }
 
+# _pkg_font_remove_artifacts — everything THIS installer may have left in
+# ~/Library/Fonts, run by BOTH font uninstall branches (the branch itself
+# only decides whether a cask uninstall goes first):
+#   1. Ports installed ONLY by the offline fallback path, gated on the
+#      install-time state: a pre-existing dejavu-fonts /
+#      ttf-nerd-fonts-symbols the user already had is never touched.
+#   2. The .ttf files copied by hand from the zip download. This is also
+#      the safety net for the cask-uninstall branch when the font actually
+#      came from the zip (brew appeared after install): the cask uninstall
+#      only knows about files the cask owns, and a failed `brew uninstall
+#      --cask` for a cask that never existed must still leave
+#      ~/Library/Fonts clean.
+# The glob is deliberately conservative (FiraCode*Nerd*.ttf): it matches
+# exactly what this installer installs — FiraCodeNerdFont{,Mono,Propo}-*.ttf
+# — and nothing else, so unrelated user fonts are never touched. A no-op
+# (no state, no matching files) without touching brew or port.
+_pkg_font_remove_artifacts() {
+  local p
+  for p in ttf-nerd-fonts-symbols dejavu-fonts; do
+    if _pkg_state_has "port:$p"; then
+      _pkg_port uninstall "$p" || true
+      _pkg_state_remove "port:$p"
+    fi
+  done
+  rm -f "${HOME}/Library/Fonts/"FiraCode*Nerd*.ttf
+  return 0
+}
+
 # pkg_install <kind> <name> — install a package through the detected manager.
 #   cli  → routed by the CPU-arch rule (detect_pkg_manager)
-#   font → routed by the original brew-first rule (_pkg_font_manager)
+#   font → routed by _pkg_font_source, THE single owner of the font source
+#          decision, shared with pkg_uninstall; it never reads PKG_MANAGER
+#          and never triggers pkg_bootstrap_manager (the zip path needs no
+#          package manager at all)
 #   brew + cli      → brew install <name>
-#   brew + font     → brew install --cask <name>
+#   brew + font     → brew install --cask <name>  (correct on Intel too —
+#                     fonts are the one thing brew may serve there)
 #   macports + cli  → sudo port install <name>
-#   macports + font → download the pinned, SHA-256-verified FiraCode Nerd Font
-#                     release into ~/Library/Fonts, degrading to MacPorts
-#                     ports when offline (see _pkg_font_macports; the <name>
-#                     cask is unused because MacPorts has no such port)
-# Returns 1 (with an actionable error) when no manager is available.
+#   font, no brew   → download the pinned, SHA-256-verified FiraCode Nerd
+#                     Font release into ~/Library/Fonts, degrading to
+#                     MacPorts ports when offline (see _pkg_font_macports;
+#                     the <name> cask is unused because MacPorts has no
+#                     such port)
+# Returns 1 (with an actionable error) when no manager is available for the
+# cli kind.
 pkg_install() {
   local kind="$1"
   local name="$2"
   local manager
   if [ "$kind" = "font" ]; then
-    manager="$(_pkg_font_manager)"
-  else
-    detect_pkg_manager
+    # Font source decided HERE — one place for install AND uninstall.
+    case "$(_pkg_font_source)" in
+      brew) brew install --cask "$name" ;;
+      zip)  _pkg_font_macports ;;
+    esac
+    return
+  fi
+  detect_pkg_manager
+  manager="$PKG_MANAGER"
+  if [ -z "$manager" ]; then
+    # Required manager missing (MacPorts on Intel, Homebrew on Apple
+    # Silicon): arch-gated consent flow before giving up (no-op on any
+    # other architecture; never returns on decline/failure).
+    pkg_bootstrap_manager
     manager="$PKG_MANAGER"
-    if [ -z "$manager" ]; then
-      # Required manager missing (MacPorts on Intel, Homebrew on Apple
-      # Silicon): arch-gated consent flow before giving up (no-op on any
-      # other architecture; never returns on decline/failure).
-      pkg_bootstrap_manager
-      manager="$PKG_MANAGER"
-    fi
   fi
   case "$manager" in
     brew)
       case "$kind" in
         cli)  brew install "$name" ;;
-        font) brew install --cask "$name" ;;
         *)    pkg_error_bad_kind pkg_install "$kind"; return 1 ;;
       esac
       ;;
     macports)
       case "$kind" in
+        # The font kind never reaches here: it is decided by
+        # _pkg_font_source above, before any manager is looked at.
         cli)
           _pkg_port install "$name" && _pkg_state_add "port:$name"
-          ;;
-        font)
-          # MacPorts has no FiraCode Nerd Font port (verified 2026-09-30),
-          # so we download the official nerd-fonts release manually and
-          # degrade to ports when offline. See _pkg_font_macports.
-          _pkg_font_macports
           ;;
         *)    pkg_error_bad_kind pkg_install "$kind"; return 1 ;;
       esac
@@ -632,62 +673,62 @@ pkg_install() {
 # / `sudo port uninstall`. Uninstall failures are ALWAYS tolerated (|| true),
 # matching the existing uninstall scripts; only a missing package manager
 # or an invalid kind returns 1 (call sites additionally guard with || true).
-# The macports font kind is state-gated: it removes ONLY the ports this
-# installer installed (see _pkg_state_*), never a pre-existing one.
+# The font kind re-decides its source through the SAME single owner as
+# pkg_install (_pkg_font_source), evaluated against what is available NOW,
+# never against install-time state and never against PKG_MANAGER: the cask
+# is only uninstalled when brew exists (a `brew uninstall --cask` never runs
+# without brew, because the zip path never installs brew), and
+# _pkg_font_remove_artifacts always runs afterwards so no .ttf orphan
+# survives any install/uninstall combination. The macports (cli) uninstall
+# is state-gated: it removes ONLY the ports this installer installed (see
+# _pkg_state_*), never a pre-existing one.
 pkg_uninstall() {
   local kind="$1"
   local name="$2"
   local manager
   if [ "$kind" = "font" ]; then
-    manager="$(_pkg_font_manager)"
-  else
-    detect_pkg_manager
+    # Same single owner as pkg_install — never PKG_MANAGER, never the
+    # arch rule, never pkg_bootstrap_manager.
+    case "$(_pkg_font_source)" in
+      brew)
+        # The font may have come from the cask OR from the pinned zip (brew
+        # appeared after install): `brew uninstall --cask` only knows about
+        # casks Homebrew owns, so its failure is tolerated; the artifact
+        # sweep below is the safety net that leaves ~/Library/Fonts clean.
+        brew uninstall --cask "$name" || true
+        _pkg_font_remove_artifacts
+        ;;
+      zip)
+        # No brew now: the zip path never installs brew, so no cask can
+        # exist — `brew uninstall --cask` must NOT run. Remove the copied
+        # .ttf files (and any fallback ports this installer recorded)
+        # directly.
+        _pkg_font_remove_artifacts
+        ;;
+    esac
+    return
+  fi
+  detect_pkg_manager
+  manager="$PKG_MANAGER"
+  if [ -z "$manager" ]; then
+    # Required manager missing (MacPorts on Intel, Homebrew on Apple
+    # Silicon): arch-gated consent flow before giving up (no-op on any
+    # other architecture; never returns on decline/failure).
+    pkg_bootstrap_manager
     manager="$PKG_MANAGER"
-    if [ -z "$manager" ]; then
-      # Required manager missing (MacPorts on Intel, Homebrew on Apple
-      # Silicon): arch-gated consent flow before giving up (no-op on any
-      # other architecture; never returns on decline/failure).
-      pkg_bootstrap_manager
-      manager="$PKG_MANAGER"
-    fi
   fi
   case "$manager" in
     brew)
       case "$kind" in
         cli)  brew uninstall "$name" || true ;;
-        font)
-          brew uninstall --cask "$name" || true
-          # Safety net for artifacts this installer copied by hand (fallback
-          # path taken when Homebrew was absent); the brew uninstall above
-          # only knows about files the cask owns.
-          rm -f "${HOME}/Library/Fonts/"FiraCode*Nerd*.ttf
-          ;;
         *)    pkg_error_bad_kind pkg_uninstall "$kind"; return 1 ;;
       esac
       ;;
     macports)
       case "$kind" in
         cli)  _pkg_port uninstall "$name" || true ;;
-        # Font artifacts:
-        #  1. Ports installed ONLY by the offline fallback path. Remove ONLY
-        #     the ones this installer installed (recorded at install time):
-        #     a pre-existing dejavu-fonts or ttf-nerd-fonts-symbols the user
-        #     already had is never touched.
-        #  2. The .ttf files we copied manually into ~/Library/Fonts on the
-        #     download path. The glob is deliberately conservative
-        #     (FiraCode*Nerd*.ttf): it matches exactly what this installer
-        #     installs — FiraCodeNerdFont{,Mono,Propo}-*.ttf — and nothing
-        #     else, so unrelated user fonts are never touched.
-        font)
-          local p
-          for p in ttf-nerd-fonts-symbols dejavu-fonts; do
-            if _pkg_state_has "port:$p"; then
-              _pkg_port uninstall "$p" || true
-              _pkg_state_remove "port:$p"
-            fi
-          done
-          rm -f "${HOME}/Library/Fonts/"FiraCode*Nerd*.ttf
-          ;;
+        # The font kind never reaches here: it is decided by
+        # _pkg_font_source above, before any manager is looked at.
         *)    pkg_error_bad_kind pkg_uninstall "$kind"; return 1 ;;
       esac
       ;;

@@ -1,7 +1,8 @@
 # pkg.sh — package-manager abstraction for the WezTerm installer (macOS only).
 #
-# Sourced (NOT executed) by the macOS installer scripts so Homebrew stays the
-# preferred manager while MacPorts works as a fallback.
+# Sourced (NOT executed) by the macOS installer scripts. The manager for
+# packages is chosen by CPU architecture (`uname -m`): MacPorts on Intel
+# x86_64, Homebrew on Apple Silicon arm64, with no fallback between them.
 #
 # Public API:
 #   detect_pkg_manager            # sets PKG_MANAGER to "brew", "macports", or ""
@@ -25,15 +26,43 @@
   exit 1
 }
 
-# Detect the available package manager. Homebrew wins when both are installed,
-# preserving the original Homebrew-only behavior. Idempotent: PKG_MANAGER is
-# always (re)assigned, including to the empty string when neither exists.
+# Detect the package manager required by this CPU architecture, read with
+# `uname -m` (the active toolchain, not Rosetta detection): MacPorts is the
+# required manager on Intel x86_64 — Homebrew is Tier 3 there since
+# September 2026 and would compile fzf/starship/atuin from source — and
+# Homebrew is required on Apple Silicon arm64, where MacPorts is NOT
+# accepted as a fallback. brew is never selected on Intel. Any other
+# architecture leaves PKG_MANAGER empty. Idempotent: PKG_MANAGER is always
+# (re)assigned, including to the empty string when the required manager is
+# missing.
 detect_pkg_manager() {
   PKG_MANAGER=""
-  if command -v brew &>/dev/null; then
-    PKG_MANAGER="brew"
-  elif command -v port &>/dev/null; then
-    PKG_MANAGER="macports"
+  case "$(uname -m)" in
+    x86_64)
+      if command -v port >/dev/null 2>&1; then
+        PKG_MANAGER="macports"
+      fi
+      ;;
+    arm64)
+      if command -v brew >/dev/null 2>&1; then
+        PKG_MANAGER="brew"
+      fi
+      ;;
+  esac
+}
+
+# _pkg_font_manager — manager selection for the `font` kind ONLY. Fonts keep
+# the ORIGINAL brew-first rule (brew cask when Homebrew exists, else the
+# MacPorts zip path in _pkg_font_macports): the CPU-arch rule above applies
+# to packages, NOT to fonts, so font install/uninstall behaves exactly as
+# before on every architecture. Centralizing the font manager is a later
+# change; do not fold this into detect_pkg_manager without updating the
+# font flow.
+_pkg_font_manager() {
+  if command -v brew >/dev/null 2>&1; then
+    echo "brew"
+  elif command -v port >/dev/null 2>&1; then
+    echo "macports"
   fi
 }
 
@@ -247,8 +276,8 @@ _pkg_font_fallback_macports() {
   return $rc
 }
 
-# _pkg_font_macports — entry point for `pkg_install font` when
-# PKG_MANAGER=macports (never reached when Homebrew is installed).
+# _pkg_font_macports — entry point for `pkg_install font` when the font
+# routing picks MacPorts (never reached when Homebrew is installed).
 _pkg_font_macports() {
   if _pkg_font_download_macports; then
     return 0
@@ -267,6 +296,8 @@ _pkg_font_macports() {
 }
 
 # pkg_install <kind> <name> — install a package through the detected manager.
+#   cli  → routed by the CPU-arch rule (detect_pkg_manager)
+#   font → routed by the original brew-first rule (_pkg_font_manager)
 #   brew + cli      → brew install <name>
 #   brew + font     → brew install --cask <name>
 #   macports + cli  → sudo port install <name>
@@ -278,8 +309,14 @@ _pkg_font_macports() {
 pkg_install() {
   local kind="$1"
   local name="$2"
-  detect_pkg_manager
-  case "$PKG_MANAGER" in
+  local manager
+  if [ "$kind" = "font" ]; then
+    manager="$(_pkg_font_manager)"
+  else
+    detect_pkg_manager
+    manager="$PKG_MANAGER"
+  fi
+  case "$manager" in
     brew)
       case "$kind" in
         cli)  brew install "$name" ;;
@@ -306,7 +343,7 @@ pkg_install() {
       return 1
       ;;
     *)
-      echo "Error: pkg_install: unknown PKG_MANAGER '$PKG_MANAGER'." >&2
+      echo "Error: pkg_install: unknown PKG_MANAGER '$manager'." >&2
       return 1
       ;;
   esac
@@ -321,8 +358,14 @@ pkg_install() {
 pkg_uninstall() {
   local kind="$1"
   local name="$2"
-  detect_pkg_manager
-  case "$PKG_MANAGER" in
+  local manager
+  if [ "$kind" = "font" ]; then
+    manager="$(_pkg_font_manager)"
+  else
+    detect_pkg_manager
+    manager="$PKG_MANAGER"
+  fi
+  case "$manager" in
     brew)
       case "$kind" in
         cli)  brew uninstall "$name" || true ;;
@@ -367,7 +410,7 @@ pkg_uninstall() {
       return 1
       ;;
     *)
-      echo "Error: pkg_uninstall: unknown PKG_MANAGER '$PKG_MANAGER'." >&2
+      echo "Error: pkg_uninstall: unknown PKG_MANAGER '$manager'." >&2
       return 1
       ;;
   esac

@@ -15,9 +15,10 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 BOLD='\033[1m'
 
-# macOS package-manager layer (Homebrew preferred, MacPorts fallback).
-# Sourced at the top so a missing pkg.sh fails fast at startup rather than
-# mid-install; the layer is macOS-only, so skip it elsewhere.
+# macOS package-manager layer (MacPorts on Intel x86_64, Homebrew on Apple
+# Silicon arm64). Sourced at the top so a missing pkg.sh fails fast at
+# startup rather than mid-install; the layer is macOS-only, so skip it
+# elsewhere.
 if [[ "$OSTYPE" == "darwin"* ]]; then
     source "$(dirname "${BASH_SOURCE[0]}")/scripts/pkg.sh"
 fi
@@ -29,8 +30,8 @@ check_fzf() {
         echo ""
         
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS — Homebrew preferred, MacPorts fallback (layer sourced
-            # at the top of this script)
+            # macOS — package manager chosen by CPU architecture (layer
+            # sourced at the top of this script)
             detect_pkg_manager
             if [[ -z "$PKG_MANAGER" ]]; then
                 echo -e "${RED}Error: No supported package manager found (Homebrew or MacPorts). Install manually:${NC}"

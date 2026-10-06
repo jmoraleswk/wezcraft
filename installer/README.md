@@ -5,10 +5,10 @@ Set up your WezTerm configuration on a new machine.
 ## Requirements
 
 ### macOS
-- [Homebrew](https://brew.sh) or [MacPorts](https://www.macports.org/) — Homebrew is preferred when both are installed
+- [MacPorts](https://www.macports.org/) on Intel (`x86_64`), [Homebrew](https://brew.sh) on Apple Silicon (`arm64`) — the installer picks the manager from the CPU architecture, with no fallback between them
 - git (Xcode Command Line Tools)
 
-#### Why MacPorts is a first-class fallback
+#### Why MacPorts on Intel
 
 This is not belt-and-suspenders: Homebrew's own support policy is why the
 MacPorts path exists (see [Homebrew Support Tiers](https://docs.brew.sh/Support-Tiers)):

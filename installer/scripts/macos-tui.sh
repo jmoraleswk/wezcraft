@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Package-manager abstraction (Homebrew, MacPorts fallback)
+# Package-manager abstraction (MacPorts on Intel x86_64, Homebrew on Apple
+# Silicon arm64)
 source "$(dirname "${BASH_SOURCE[0]}")/pkg.sh"
 
 # WezCraft macOS TUI Installer

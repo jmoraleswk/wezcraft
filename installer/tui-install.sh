@@ -34,6 +34,11 @@ check_fzf() {
             # sourced at the top of this script)
             detect_pkg_manager
             if [[ -z "$PKG_MANAGER" ]]; then
+                # Intel without MacPorts: consent flow before giving up
+                # (no-op elsewhere; exit 1 on decline/failure).
+                pkg_bootstrap_manager
+            fi
+            if [[ -z "$PKG_MANAGER" ]]; then
                 echo -e "${RED}Error: No supported package manager found (Homebrew or MacPorts). Install manually:${NC}"
                 echo "  Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
                 echo "  MacPorts: https://www.macports.org/install.php"

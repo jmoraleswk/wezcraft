@@ -6,6 +6,8 @@
 #
 # Public API:
 #   detect_pkg_manager            # sets PKG_MANAGER to "brew", "macports", or ""
+#   pkg_bootstrap_manager         # Intel-only consent flow to install MacPorts
+#                                 # (no-op elsewhere; exit 1 on decline/failure)
 #   pkg_error_no_manager          # actionable "install one of these" error
 #   pkg_install <kind> <name>     # kind: cli | font
 #   pkg_uninstall <kind> <name>   # kind: cli | font
@@ -34,7 +36,8 @@
 # accepted as a fallback. brew is never selected on Intel. Any other
 # architecture leaves PKG_MANAGER empty. Idempotent: PKG_MANAGER is always
 # (re)assigned, including to the empty string when the required manager is
-# missing.
+# missing. On Intel an empty result is the caller's cue to run
+# pkg_bootstrap_manager before giving up (see the bootstrap section).
 detect_pkg_manager() {
   PKG_MANAGER=""
   case "$(uname -m)" in
@@ -64,6 +67,165 @@ _pkg_font_manager() {
   elif command -v port >/dev/null 2>&1; then
     echo "macports"
   fi
+}
+
+# --- Intel MacPorts bootstrap -----------------------------------------------
+# On Intel (x86_64) the arch rule leaves PKG_MANAGER empty when MacPorts is
+# missing (brew must not be used for packages there). Before giving up,
+# pkg_bootstrap_manager runs this consent flow: an explicit /dev/tty prompt,
+# then a pinned MacPorts .pkg install. Consent is NEVER silent and NEVER
+# read from piped stdin -- running `sudo installer` on a .pkg is the user's
+# decision -- and with no terminal available it fails closed to the abort
+# message. Declining, missing sudo, an unpublished .pkg for this macOS
+# version, or exhausting the 2 allowed attempts all end in
+# _pkg_macports_abort (abort message + exit 1).
+# Bash 3.2 compatible, safe under `set -euo pipefail`.
+
+_PKG_MACPORTS_VERSION="2.12.6"
+_PKG_MACPORTS_RELEASE="https://github.com/macports/macports-base/releases/download/v${_PKG_MACPORTS_VERSION}"
+
+# Abort message -- used for decline AND for failure (after retries, or when
+# sudo is unavailable). Never returns.
+_pkg_macports_abort() {
+  echo "Error: MacPorts is required to install WezCraft dependencies on Intel (x86_64)." >&2
+  echo "Installation aborted. Install MacPorts manually and run the installer again:" >&2
+  echo "  https://github.com/macports/macports-base/releases" >&2
+  exit 1
+}
+
+# Warning -- no .pkg is published for this macOS version. Deterministic, so
+# the caller does not retry: retrying cannot change the OS version.
+_pkg_macports_error_no_pkg() {
+  echo "⚠ No MacPorts package is published for this macOS version." >&2
+  echo "Download it manually and run the installer again:" >&2
+  echo "  https://github.com/macports/macports-base/releases" >&2
+}
+
+# Print the .pkg file name for this macOS (the release embeds the macOS
+# major version) and fail when no package matches. Pinned to the set
+# published for version 2.12.6.
+_pkg_macports_pkg_name() {
+  local version major codename
+  version="$(sw_vers -productVersion 2>/dev/null)" || return 1
+  major="${version%%.*}"
+  case "$major" in
+    11) codename="BigSur" ;;
+    12) codename="Monterey" ;;
+    13) codename="Ventura" ;;
+    14) codename="Sonoma" ;;
+    15) codename="Sequoia" ;;
+    26) codename="Tahoe" ;;
+    27) codename="GoldenGate" ;;
+    *)  return 1 ;;
+  esac
+  echo "MacPorts-${_PKG_MACPORTS_VERSION}-${major}-${codename}.pkg"
+}
+
+# One install attempt for <pkg-name>: download into a temp dir (EXIT trap
+# cleans it even on failure), install the .pkg, put /opt/local/bin on PATH
+# -- CRITICAL: /etc/paths.d is not reloaded in a live shell and every later
+# `port` call depends on it -- selfupdate, then verify. There is no
+# published SHA-256 for the .pkg: the version is pinned and the download
+# relies on HTTPS/TLS. Returns 1 on any failed step so the caller can
+# retry once.
+_pkg_macports_try_install() {
+  local pkg_name="$1"
+  local tmp_dir dest old_trap rc=1
+
+  tmp_dir="$(mktemp -d 2>/dev/null)" || return 1
+  # Expand $tmp_dir NOW (double quotes, not single): the trap must clean
+  # the exact directory even if the shell exits while this local is still
+  # in scope. Any EXIT trap the caller already had is saved first and
+  # restored at the end (same pattern as _pkg_font_download_macports).
+  old_trap="$(trap -p EXIT)"
+  trap "rm -rf -- '$tmp_dir'" EXIT
+
+  dest="$tmp_dir/$pkg_name"
+  if _pkg_fetch "$_PKG_MACPORTS_RELEASE/$pkg_name" "$dest"; then
+    if sudo installer -pkg "$dest" -target /; then
+      export PATH="/opt/local/bin:$PATH"
+      if sudo port selfupdate; then
+        if command -v port >/dev/null 2>&1 && port version >/dev/null 2>&1; then
+          rc=0
+        fi
+      fi
+    fi
+  fi
+
+  rm -rf -- "$tmp_dir"
+  if [ -n "$old_trap" ]; then
+    eval "$old_trap"
+  else
+    trap - EXIT
+  fi
+  return $rc
+}
+
+# pkg_bootstrap_manager — Intel-only consent flow, called when the arch rule
+# left PKG_MANAGER empty. On success PKG_MANAGER becomes "macports" and
+# /opt/local/bin has been exported onto PATH; otherwise it never returns
+# (exit 1). A no-op everywhere else, so callers keep their existing error
+# path (arm64 without Homebrew, unsupported architecture, font routing).
+pkg_bootstrap_manager() {
+  local reply attempt pkg_name
+
+  case "$(uname -m)" in
+    x86_64) ;;
+    *) return 0 ;;
+  esac
+  if command -v port >/dev/null 2>&1; then
+    PKG_MANAGER="macports"
+    return 0
+  fi
+
+  # Consent prompt on the controlling terminal (/dev/tty), never piped
+  # stdin. The group's stderr is silenced before /dev/tty is opened, so a
+  # missing terminal fails closed: quietly, with only the abort message
+  # below as output.
+  if ! {
+    printf '%s\n' \
+      '⚠ Intel Mac detected (x86_64).' \
+      'Homebrew no longer ships binaries for Intel (Tier 3):' \
+      'installing fzf, starship, or atuin would compile everything' \
+      'from source (takes many minutes and may fail).' \
+      '' \
+      'WezCraft requires MacPorts on this architecture.' \
+      '  version:  2.12.6' \
+      '  package:  MacPorts-2.12.6-15-Sequoia.pkg' \
+      '  source:   https://github.com/macports/macports-base/releases' \
+      ''
+    printf '%s' 'Install MacPorts now? [Y/n]'
+  } 2>/dev/null > /dev/tty; then
+    _pkg_macports_abort
+  fi
+
+  reply=""
+  IFS= read -r reply < /dev/tty || reply="n" # EOF counts as decline
+  case "$reply" in
+    ""|Y|y) ;;
+    *) _pkg_macports_abort ;;
+  esac
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    _pkg_macports_abort
+  fi
+
+  pkg_name="$(_pkg_macports_pkg_name)" || pkg_name=""
+  if [ -z "$pkg_name" ]; then
+    _pkg_macports_error_no_pkg
+    _pkg_macports_abort
+  fi
+
+  # Maximum 2 attempts total (initial + one retry).
+  attempt=1
+  while [ "$attempt" -le 2 ]; do
+    if _pkg_macports_try_install "$pkg_name"; then
+      PKG_MANAGER="macports"
+      return 0
+    fi
+    attempt=$((attempt + 1))
+  done
+  _pkg_macports_abort
 }
 
 # Run a `port` subcommand with the privileges MacPorts needs. MacPorts
@@ -315,6 +477,12 @@ pkg_install() {
   else
     detect_pkg_manager
     manager="$PKG_MANAGER"
+    if [ -z "$manager" ]; then
+      # Intel without MacPorts: run the consent flow before giving up.
+      # No-op on other architectures; never returns on decline/failure.
+      pkg_bootstrap_manager
+      manager="$PKG_MANAGER"
+    fi
   fi
   case "$manager" in
     brew)
@@ -364,6 +532,12 @@ pkg_uninstall() {
   else
     detect_pkg_manager
     manager="$PKG_MANAGER"
+    if [ -z "$manager" ]; then
+      # Intel without MacPorts: run the consent flow before giving up.
+      # No-op on other architectures; never returns on decline/failure.
+      pkg_bootstrap_manager
+      manager="$PKG_MANAGER"
+    fi
   fi
   case "$manager" in
     brew)

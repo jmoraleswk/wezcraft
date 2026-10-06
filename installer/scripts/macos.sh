@@ -13,8 +13,13 @@ echo "Source: $SOURCE"
 echo "Target: $TARGET"
 echo ""
 
-# --- 1. Check package manager (Homebrew or MacPorts) ---
+# --- 1. Check package manager (MacPorts on Intel, Homebrew on arm64) ---
 detect_pkg_manager
+if [[ -z "$PKG_MANAGER" ]]; then
+  # Intel without MacPorts: consent flow before giving up
+  # (no-op elsewhere; exit 1 on decline/failure).
+  pkg_bootstrap_manager
+fi
 if [[ -z "$PKG_MANAGER" ]]; then
   pkg_error_no_manager
   exit 1

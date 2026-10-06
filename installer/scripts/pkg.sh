@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 # pkg.sh — package-manager abstraction for the WezTerm installer (macOS only).
 #
 # Sourced (NOT executed) by the macOS installer scripts so Homebrew stays the
@@ -17,6 +16,14 @@
 #
 # Bash 3.2 compatible (macOS /bin/bash): no associative arrays, no ${var,,}.
 # Safe for callers running under `set -euo pipefail`.
+
+# Guard: this file is sourced, never executed. Running it in its own shell
+# would only define functions and exit 0 — a silent no-op that looks like a
+# successful install.
+[[ ${BASH_SOURCE[0]} == "$0" ]] && {
+  echo "pkg.sh must be sourced, not executed." >&2
+  exit 1
+}
 
 # Detect the available package manager. Homebrew wins when both are installed,
 # preserving the original Homebrew-only behavior. Idempotent: PKG_MANAGER is
@@ -319,7 +326,13 @@ pkg_uninstall() {
     brew)
       case "$kind" in
         cli)  brew uninstall "$name" || true ;;
-        font) brew uninstall --cask "$name" || true ;;
+        font)
+          brew uninstall --cask "$name" || true
+          # Safety net for artifacts this installer copied by hand (fallback
+          # path taken when Homebrew was absent); the brew uninstall above
+          # only knows about files the cask owns.
+          rm -f "${HOME}/Library/Fonts/"FiraCode*Nerd*.ttf
+          ;;
         *)    pkg_error_bad_kind pkg_uninstall "$kind"; return 1 ;;
       esac
       ;;

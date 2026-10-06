@@ -46,9 +46,6 @@ if [[ -f "${HOME}/Library/Fonts/FiraCodeNerdFont-Regular.ttf" ]]; then
   read -rp "Remove FiraCode Nerd Font? [y/N] " ANSWER
   if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
     pkg_uninstall font font-fira-code-nerd-font 2>/dev/null || true
-    rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFont-*.ttf
-    rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontMono-*.ttf
-    rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontPropo-*.ttf
     echo "  Removed FiraCode Nerd Font"
   fi
 fi

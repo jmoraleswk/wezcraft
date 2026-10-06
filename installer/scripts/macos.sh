@@ -59,7 +59,10 @@ else
   rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFont-*.ttf
   rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontMono-*.ttf
   rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontPropo-*.ttf
-  pkg_install font font-fira-code-nerd-font 2>/dev/null || true
+  if ! pkg_install font font-fira-code-nerd-font; then
+    echo "  WARNING: FiraCode Nerd Font could not be installed." >&2
+    echo "           The install continues; status bar icons may show as placeholders." >&2
+  fi
 fi
 
 # --- 7. Setup launchd agent ---

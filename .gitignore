@@ -32,3 +32,6 @@ docs/*
 
 # Local CodeGraph index (regenerable with `codegraph init`)
 .codegraph/
+
+# Local behavioral test harness (working tree only)
+installer/tests/

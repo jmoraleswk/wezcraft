@@ -250,3 +250,10 @@ if command -v atuin &>/dev/null; then
 fi
 echo ""
 echo "Restart WezTerm to apply changes."
+
+# --- 13. Final summary (plan F5) ---
+# One line per component + an honest exit status: 0 only when nothing
+# failed, 1 when any component did — every step above already ran to
+# completion regardless (F4's guards). Defined in pkg.sh, shared with
+# macos-tui.sh. Never returns.
+pkg_install_summary

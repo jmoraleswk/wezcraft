@@ -233,5 +233,13 @@ if [[ "$STATS_INSTALL" == "true" ]]; then
     pkg_run_component "stats daemon" _tui_stats_daemon || true
 fi
 
-echo ""
-echo -e "${GREEN}Installation complete!${NC}"
+# --- 9. Final summary (plan F5) ---
+# One line per component + an honest exit status REPLACES the old
+# unconditional `Installation complete!`: F4 made component failures
+# non-fatal, so that green success line had become reachable right next to
+# recorded ✗ failures while the script still exited 0 — a double lie.
+# Defined in pkg.sh, shared with macos.sh (never pasted here). Never
+# returns — and because it exits 1 on any failure, tui-install.sh under
+# `set -e` stops before printing its own success line, so a failing run
+# can no longer end in green.
+pkg_install_summary

@@ -22,6 +22,11 @@
 #                                 # run one install component with progress,
 #                                 # log capture, and failure recording
 #                                 # (see the "Per-component progress" section)
+#   pkg_install_summary           # print the end-of-run component summary
+#                                 # and exit with an honest status (0 only
+#                                 # when nothing failed, 1 otherwise); never
+#                                 # returns (see the "Final install summary"
+#                                 # section)
 #
 # MacPorts needs administrator rights (it installs into /opt/local), so all
 # `port` calls go through a sudo wrapper. The font source is decided in
@@ -771,7 +776,9 @@ pkg_uninstall() {
 # tui-install.sh).
 #
 # Failures are recorded, in install order, in the plain indexed array
-# WEZCRAFT_FAILED_COMPONENTS — the data the end-of-run summary consumes.
+# WEZCRAFT_FAILED_COMPONENTS, successes in WEZCRAFT_SUCCEEDED_COMPONENTS —
+# the data the end-of-run summary (pkg_install_summary) consumes to report
+# only what THIS run actually did.
 # Bash 3.2 compatible, safe under `set -euo pipefail`.
 
 # Fixed capture path (spec, plan F4). Append-only across components; each
@@ -781,6 +788,14 @@ WEZCRAFT_INSTALL_LOG="/tmp/wezcraft-install.log"
 # Component names that failed, in install order. (Re)initialized when
 # pkg.sh is sourced — once per installer process.
 WEZCRAFT_FAILED_COMPONENTS=()
+
+# Component names that ran through pkg_run_component AND succeeded, in
+# install order. Together with the failure array this gives the end-of-run
+# summary three honest states per component: failed (✗), succeeded (✓), or
+# never attempted (⊘ skipped — the TUI picker did not select it, it was
+# already installed, or the prompt was declined). Bash 3.2: plain indexed
+# arrays only.
+WEZCRAFT_SUCCEEDED_COMPONENTS=()
 
 # show_progress <component> <installing|done|skip|error> [elapsed-seconds]
 # Single-line updates: the marker is rewritten in place with \r, and
@@ -842,6 +857,7 @@ pkg_run_component() {
   elapsed=$(( $(date +%s) - started ))
 
   if [ "$rc" -eq 0 ]; then
+    WEZCRAFT_SUCCEEDED_COMPONENTS+=("$component")
     show_progress "$component" done "$elapsed"
     return 0
   fi
@@ -852,4 +868,98 @@ pkg_run_component() {
   tail -c "+$((offset + 1))" "$log" 2>/dev/null | tail -n 20 \
     | sed 's/^/    /' || true
   return "$rc"
+}
+
+# --- Final install summary (plan F5) ----------------------------------------
+# pkg_install_summary — the ONE end-of-run summary, shared by macos.sh and
+# macos-tui.sh (pasting the body into both scripts would let the copies
+# drift, exactly the duplication pkg.sh exists to prevent). It prints one
+# line per component in the fixed order below, then EXITS with an honest
+# status — it never returns, so neither caller can forget the exit step
+# and silently re-lose the contract:
+#
+#   === Installation summary ===
+#     ✓ config                     ran this run and succeeded
+#     ✗ atuin    → log: /tmp/wezcraft-install.log
+#                                     recorded failure + captured log path
+#     ⊘ font skipped               never attempted this run
+#   Installation complete.                    (no failures  -> exit 0)
+#   Installation complete with 1 warning.     (one failure  -> exit 1)
+#   Installation complete with N warnings.    (N > 1        -> exit 1)
+#
+# Report ONLY what THIS run did — the summary rule, identical in both
+# installers:
+#   * ✗      the component is in WEZCRAFT_FAILED_COMPONENTS (recorded by
+#            pkg_run_component this run), and its line carries the log
+#            path from $WEZCRAFT_INSTALL_LOG (F4's constant, never a
+#            second hardcoded copy);
+#   * ✓      it ran through pkg_run_component this run and succeeded
+#            (recorded in WEZCRAFT_SUCCEEDED_COMPONENTS);
+#   * ⊘ skipped  it was never attempted: the TUI picker did not select it
+#            (--font=false style flags), it was already installed, or the
+#            prompt was declined. A skipped component is NEVER shown as ✓
+#            (nothing was installed) and NEVER as ✗ (nothing failed).
+#
+# The exit status comes from WEZCRAFT_FAILED_COMPONENTS itself, not from
+# counting the printed ✗ lines, so the exit code never lies even if a
+# future component name were missing from the fixed list below.
+#
+# Bash 3.2 compatible: plain indexed arrays only, and every
+# "${array[@]}" iteration sits behind a length check — expanding an empty
+# array under `set -u` aborts a bash 3.2 shell with "unbound variable"
+# (unguarded empty-array expansion is only safe from bash 4.4 on).
+
+# Fixed end-of-run order (plan F5), used by BOTH macOS installers: config,
+# font, starship, atuin, stats daemon.
+WEZCRAFT_SUMMARY_COMPONENTS=(config font starship atuin "stats daemon")
+
+# True when <component> is recorded as failed. The length guard is
+# mandatory on bash 3.2 + `set -u` (see above).
+_pkg_component_failed() {
+  local component="$1" c
+  [ "${#WEZCRAFT_FAILED_COMPONENTS[@]}" -gt 0 ] || return 1
+  for c in "${WEZCRAFT_FAILED_COMPONENTS[@]}"; do
+    [ "$c" = "$component" ] && return 0
+  done
+  return 1
+}
+
+# True when <component> ran this run and succeeded (same guard rule).
+_pkg_component_succeeded() {
+  local component="$1" c
+  [ "${#WEZCRAFT_SUCCEEDED_COMPONENTS[@]}" -gt 0 ] || return 1
+  for c in "${WEZCRAFT_SUCCEEDED_COMPONENTS[@]}"; do
+    [ "$c" = "$component" ] && return 0
+  done
+  return 1
+}
+
+# pkg_install_summary — print the summary above and exit 0 or 1. NEVER
+# RETURNS: call it as the last statement of an installer script.
+pkg_install_summary() {
+  local component warnings
+  warnings="${#WEZCRAFT_FAILED_COMPONENTS[@]}"
+
+  echo ""
+  echo "=== Installation summary ==="
+  for component in "${WEZCRAFT_SUMMARY_COMPONENTS[@]}"; do
+    if _pkg_component_failed "$component"; then
+      printf '  ✗ %s    → log: %s\n' "$component" "$WEZCRAFT_INSTALL_LOG"
+    elif _pkg_component_succeeded "$component"; then
+      printf '  ✓ %s\n' "$component"
+    else
+      printf '  ⊘ %s skipped\n' "$component"
+    fi
+  done
+
+  if [ "$warnings" -eq 0 ]; then
+    echo "Installation complete."
+    exit 0
+  fi
+  if [ "$warnings" -eq 1 ]; then
+    echo "Installation complete with 1 warning."
+  else
+    echo "Installation complete with ${warnings} warnings."
+  fi
+  exit 1
 }

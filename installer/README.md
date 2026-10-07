@@ -71,7 +71,7 @@ re-clone from GitHub).
 ```
 
 ### Options (macOS/Linux only)
-- `--tui` — Interactive component picker (installs `fzf` first if missing)
+- `--tui` — Interactive component picker. Requires `fzf`; if it is missing, the installer asks for consent before installing it (see Notes)
 - `--source <path>` — Config source directory (default: the local repo root)
 - `--repo <url>` — Custom repo URL used when bootstrapping via curl (default: `https://github.com/jmoraleswk/wezcraft`)
 
@@ -136,7 +136,7 @@ directly without `--source` exits with an error before any side effects.
 8. Installs Atuin via WinGet (if not already installed) + shell integration
 
 ### Uninstall (All Platforms)
-- Optionally removes: config, session saves, font, starship, starship config, atuin, backups
+- Optionally removes: config, session saves, font, starship, starship config, atuin, fzf (only if this installer installed it), backups
 - Automatically removes shell integration (starship init, atuin init, resurrect() helper)
 
 ## Notes
@@ -162,6 +162,16 @@ directly without `--source` exits with an error before any side effects.
   so `port install`/`port uninstall` run through `sudo`. When no terminal is
   available to prompt for a password (e.g. a fully non-interactive run), the
   installer fails with an actionable message instead of hanging.
+- **`fzf` is a hard requirement of `--tui`** — it powers the component picker,
+  so it is installed through the detected package manager (`sudo port install`
+  on Intel, `brew install` on Apple Silicon) before the picker opens. That
+  install asks for **explicit consent on the terminal** and warns that it needs
+  administrator rights and may compile from source; declining, or running
+  without a terminal, aborts with an actionable message and exit 1. The
+  uninstaller offers to remove `fzf` **only when this installer installed it**
+  (tracked in `~/.local/state/wezcraft/installed-pkgs`), so a pre-existing
+  `fzf` is never touched. If you do not want `fzf` installed, use the
+  non-TUI installer: `./installer/install.sh`.
 - One-liner (`curl | bash`) installs pull the latest config from GitHub — no bundling needed; local checkouts install their own files
 - The resurrect.wezterm plugin is included in the repo
 - Stats daemon (CPU/RAM) runs on all platforms:

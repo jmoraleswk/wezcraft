@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/jmoraleswk/wezcraft/main/installer/
 
 This will:
 1. Clone the repo to a temp directory
-2. Auto-install fzf if needed
+2. Install `fzf` if needed (it asks for consent first)
 3. Launch interactive TUI installer
 4. Clean up temp files when done
 

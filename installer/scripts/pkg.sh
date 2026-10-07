@@ -397,9 +397,11 @@ pkg_error_bad_kind() {
 }
 
 # --- Install-state tracking ------------------------------------------------
-# Records exactly which MacPorts ports THIS installer installed, so the
-# uninstaller never removes a port the user already had (e.g. a pre-existing
-# dejavu-fonts). One line per owned port: "port:<portname>".
+# Records exactly which packages THIS installer installed, so the uninstaller
+# never removes a package the user already had (e.g. a pre-existing
+# dejavu-fonts). BOTH manager branches record what they installed — one line
+# per owned package: "port:<portname>" for MacPorts ports and "brew:<name>"
+# for Homebrew formulae.
 WEZCRAFT_STATE_DIR="${HOME}/.local/state/wezcraft"
 WEZCRAFT_STATE_FILE="${WEZCRAFT_STATE_DIR}/installed-pkgs"
 
@@ -658,7 +660,10 @@ pkg_install() {
   case "$manager" in
     brew)
       case "$kind" in
-        cli)  brew install "$name" ;;
+        # Record what WE installed (brew:<name>), exactly like the MacPorts
+        # branch below, so the uninstaller removes only packages this
+        # installer added and never a pre-existing user install.
+        cli)  brew install "$name" && _pkg_state_add "brew:$name" ;;
         *)    pkg_error_bad_kind pkg_install "$kind"; return 1 ;;
       esac
       ;;

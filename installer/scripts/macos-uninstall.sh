@@ -81,7 +81,24 @@ if command -v atuin &>/dev/null; then
   fi
 fi
 
-# --- 7. Prompt: remove starship config ---
+# --- 7. Prompt: remove fzf ---
+# fzf belongs to us only when WezCraft installed it for the installer UI,
+# which is exactly what the state records (port:fzf on Intel, brew:fzf on
+# Apple Silicon). The state gate is why a pre-existing user install is
+# NEVER prompted for or touched, even though it is on PATH.
+if _pkg_state_has "port:fzf" || _pkg_state_has "brew:fzf"; then
+  if command -v fzf &>/dev/null; then
+    read -rp "Remove fzf (installed by WezCraft for the installer UI)? [y/N] " ANSWER
+    if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
+      pkg_uninstall cli fzf 2>/dev/null || true
+      _pkg_state_remove "port:fzf"
+      _pkg_state_remove "brew:fzf"
+      echo "  Removed fzf"
+    fi
+  fi
+fi
+
+# --- 8. Prompt: remove starship config ---
 STARSHIP_CONFIG_DIR="${HOME}/.config/starship"
 if [[ -d "$STARSHIP_CONFIG_DIR" ]]; then
   read -rp "Remove Starship config (~/.config/starship/)? [y/N] " ANSWER

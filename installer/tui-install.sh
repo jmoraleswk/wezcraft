@@ -23,10 +23,45 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     source "$(dirname "${BASH_SOURCE[0]}")/scripts/pkg.sh"
 fi
 
+# Required-dependency abort: used when the user declines the fzf consent
+# prompt AND when no controlling terminal is available to ask on. fzf powers
+# the picker, so without it there is no --tui at all. Never returns.
+_fzf_abort() {
+    echo -e "${RED}Error: fzf is required for the interactive installer (--tui).${NC}" >&2
+    echo "Install it manually and run this installer again:" >&2
+    echo "  https://github.com/junegunn/fzf#installation" >&2
+    echo "Or use the non-interactive installer: installer/install.sh" >&2
+    exit 1
+}
+
 # Check for fzf and install if missing
 check_fzf() {
+    local reply
     if ! command -v fzf &>/dev/null; then
-        echo -e "${YELLOW}fzf not found. Installing...${NC}"
+        # fzf powers the component picker, so it is a hard requirement: the
+        # install (admin rights, possibly a source build that takes minutes)
+        # needs EXPLICIT consent. The notice is printed on and the answer
+        # read from the controlling terminal (/dev/tty), never piped stdin;
+        # the group's stderr is silenced before /dev/tty is opened, so a
+        # missing terminal fails closed to the abort below.
+        if ! {
+            printf '%s\n' \
+              'fzf not found.' \
+              'fzf is REQUIRED for the interactive installer (it powers the component picker).' \
+              'It will be installed with administrator rights (sudo).' \
+              'It may compile from source, which can take several minutes.' \
+              ''
+            printf '%s' 'Install fzf now? [Y/n]'
+        } 2>/dev/null > /dev/tty; then
+            _fzf_abort
+        fi
+
+        reply=""
+        IFS= read -r reply < /dev/tty || reply="n" # EOF counts as decline
+        case "$reply" in
+            ""|Y|y) ;;
+            *) _fzf_abort ;;
+        esac
         echo ""
         
         if [[ "$OSTYPE" == "darwin"* ]]; then

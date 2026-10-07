@@ -46,9 +46,13 @@ if [[ -d "$TARGET" ]]; then
 fi
 
 # --- 2. Copy config ---
-echo "Copying config files..."
-mkdir -p "$TARGET"
-rsync -a --exclude='.git' \
+# Component "config": the whole copy runs as ONE progress unit, so an
+# rsync failure is recorded in WEZCRAFT_FAILED_COMPONENTS instead of
+# aborting the run under `set -e` (the guard on the call is what keeps
+# `set -e` from firing on a recorded failure).
+_tui_copy_config() {
+    mkdir -p "$TARGET" || return 1
+    rsync -a --exclude='.git' \
           --exclude='.gitignore' \
           --exclude='.DS_Store' \
           --exclude='.atl' \
@@ -57,6 +61,8 @@ rsync -a --exclude='.git' \
           --exclude='/docs' \
           --exclude='README.md' \
           "$SOURCE/" "$TARGET/"
+}
+pkg_run_component config _tui_copy_config || true
 
 # --- 3. Create required directories ---
 mkdir -p "${HOME}/.local/share/wezterm/resurrect"
@@ -65,7 +71,6 @@ mkdir -p "${HOME}/.local/state/wezterm"
 # --- 4. Install font (Homebrew or MacPorts) ---
 if [[ "$FONT_INSTALL" == "true" ]]; then
     echo ""
-    echo "Installing FiraCode Nerd Font..."
     if [[ -f "${HOME}/Library/Fonts/FiraCodeNerdFont-Regular.ttf" ]]; then
         echo -e "${YELLOW}⊘ FiraCode Nerd Font already installed${NC}"
     else
@@ -73,8 +78,9 @@ if [[ "$FONT_INSTALL" == "true" ]]; then
         rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFont-*.ttf
         rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontMono-*.ttf
         rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontPropo-*.ttf
-        pkg_install font font-fira-code-nerd-font
-        echo -e "${GREEN}✓ FiraCode Nerd Font installed${NC}"
+        # Component "font": progress + log capture; the guard keeps a
+        # failed install from aborting the TUI run under `set -e`.
+        pkg_run_component font pkg_install font font-fira-code-nerd-font || true
     fi
 fi
 
@@ -82,16 +88,18 @@ fi
 if [[ "$STARSHIP_INSTALL" == "true" ]]; then
     echo ""
     if ! command -v starship &>/dev/null; then
-        echo "Installing Starship..."
-        pkg_install cli starship
-        echo -e "${GREEN}✓ Starship installed${NC}"
+        # Component "starship": progress + log capture; the guard keeps a
+        # failed install from aborting the TUI run under `set -e`.
+        pkg_run_component starship pkg_install cli starship || true
     else
         echo -e "${YELLOW}⊘ Starship already installed${NC}"
     fi
     
-    # Starship config - nerd-font-symbols preset
+    # Starship config - nerd-font-symbols preset. Gated on the binary: a
+    # declined or failed starship install must not reach `starship preset`
+    # (command-not-found would abort the run under set -e).
     STARSHIP_CONFIG="${HOME}/.config/starship/starship.toml"
-    if [[ ! -f "$STARSHIP_CONFIG" ]]; then
+    if command -v starship &>/dev/null && [[ ! -f "$STARSHIP_CONFIG" ]]; then
         echo "Creating Starship config with nerd-font-symbols preset..."
         mkdir -p "${HOME}/.config/starship"
         starship preset nerd-font-symbols -o "$STARSHIP_CONFIG"
@@ -161,9 +169,9 @@ fi
 if [[ "$ATUIN_INSTALL" == "true" ]]; then
     echo ""
     if ! command -v atuin &>/dev/null; then
-        echo "Installing Atuin..."
-        pkg_install cli atuin
-        echo -e "${GREEN}✓ Atuin installed${NC}"
+        # Component "atuin": progress + log capture; the guard keeps a
+        # failed install from aborting the TUI run under `set -e`.
+        pkg_run_component atuin pkg_install cli atuin || true
     else
         echo -e "${YELLOW}⊘ Atuin already installed${NC}"
     fi
@@ -186,14 +194,13 @@ if [[ "$ATUIN_INSTALL" == "true" ]]; then
 fi
 
 # --- 8. Stats daemon (launchd) ---
-if [[ "$STATS_INSTALL" == "true" ]]; then
-    echo ""
-    echo "Installing stats daemon..."
-    
-    chmod +x "$TARGET/elements/statusbar/update_stats.sh"
+# Component "stats daemon": chmod + plist + load as ONE progress unit —
+# a launchd failure is recorded and the TUI run reaches its end.
+_tui_stats_daemon() {
+    chmod +x "$TARGET/elements/statusbar/update_stats.sh" || return 1
     
     PLIST_DIR="${HOME}/Library/LaunchAgents"
-    mkdir -p "$PLIST_DIR"
+    mkdir -p "$PLIST_DIR" || return 1
     PLIST_FILE="${PLIST_DIR}/com.user.wezterm-stats.plist"
     
     cat > "$PLIST_FILE" <<EOF
@@ -219,8 +226,11 @@ EOF
     # Unload if already loaded, then load
     launchctl unload "$PLIST_FILE" 2>/dev/null || true
     launchctl load "$PLIST_FILE"
-    
-    echo -e "${GREEN}✓ Stats daemon installed and started${NC}"
+}
+
+if [[ "$STATS_INSTALL" == "true" ]]; then
+    echo ""
+    pkg_run_component "stats daemon" _tui_stats_daemon || true
 fi
 
 echo ""

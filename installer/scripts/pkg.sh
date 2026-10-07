@@ -13,6 +13,15 @@
 #   pkg_error_no_manager          # actionable "install one of these" error
 #   pkg_install <kind> <name>     # kind: cli | font
 #   pkg_uninstall <kind> <name>   # kind: cli | font
+#   show_progress <component> <status> [elapsed]
+#                                 # single-line progress marker (installing /
+#                                 # done / skip / error). Defined HERE, once:
+#                                 # pkg.sh is the one file sourced by
+#                                 # macos.sh, macos-tui.sh AND tui-install.sh
+#   pkg_run_component <component> <command...>
+#                                 # run one install component with progress,
+#                                 # log capture, and failure recording
+#                                 # (see the "Per-component progress" section)
 #
 # MacPorts needs administrator rights (it installs into /opt/local), so all
 # `port` calls go through a sudo wrapper. The font source is decided in
@@ -741,4 +750,106 @@ pkg_uninstall() {
       return 1
       ;;
   esac
+}
+
+# --- Per-component progress with log capture (plan F4) ----------------------
+# pkg_run_component runs ONE install component under this contract:
+#
+#   ⏳ Installing <component>...            single-line progress marker
+#     manager output -> /tmp/wezcraft-install.log
+#                       (silent on success; the captured tail is shown
+#                       only when THAT component fails)
+#   ok   -> ✓ <component> installed (<N>s)
+#   fail -> ✗ <component> failed            the run CONTINUES: callers
+#                       guard the call so `set -e` never aborts the flow
+#
+# This lives in pkg.sh — the ONE file sourced by macos.sh, macos-tui.sh
+# AND tui-install.sh — because the first two are separate processes from
+# tui-install.sh: a helper defined only there would be invisible to them,
+# and defining it in three files would let the copies drift. show_progress
+# moved here with it (it used to be defined, and never called, in
+# tui-install.sh).
+#
+# Failures are recorded, in install order, in the plain indexed array
+# WEZCRAFT_FAILED_COMPONENTS — the data the end-of-run summary consumes.
+# Bash 3.2 compatible, safe under `set -euo pipefail`.
+
+# Fixed capture path (spec, plan F4). Append-only across components; each
+# section starts with a header so a reader can find the failing one.
+WEZCRAFT_INSTALL_LOG="/tmp/wezcraft-install.log"
+
+# Component names that failed, in install order. (Re)initialized when
+# pkg.sh is sourced — once per installer process.
+WEZCRAFT_FAILED_COMPONENTS=()
+
+# show_progress <component> <installing|done|skip|error> [elapsed-seconds]
+# Single-line updates: the marker is rewritten in place with \r, and
+# \033[K erases the leftover tail of the longer marker before every final
+# status, so each finished status is a complete line ending with a
+# newline — the TUI never keeps a half-drawn line behind.
+show_progress() {
+  local component="$1"
+  local status="$2"
+  local elapsed="${3:-}"
+  case "$status" in
+    installing)
+      printf '\r\033[0;36m⏳ Installing %s...\033[0m' "$component"
+      ;;
+    done)
+      printf '\r\033[K\033[0;32m✓ %s installed%s\033[0m\n' \
+        "$component" "${elapsed:+ (${elapsed}s)}"
+      ;;
+    skip)
+      printf '\r\033[K\033[1;33m⊘ %s already installed\033[0m\n' "$component"
+      ;;
+    error)
+      printf '\r\033[K\033[0;31m✗ %s failed\033[0m\n' "$component"
+      ;;
+  esac
+}
+
+# pkg_run_component <component> <command...> — run one component through
+# the contract above. stdout+stderr of the command are appended to
+# $WEZCRAFT_INSTALL_LOG under a per-component header; the section's tail
+# is printed ONLY on failure, and it is sliced by the byte offset taken
+# BEFORE the header was appended, so a previous component's output can
+# never leak into it. Returns the command's exit status — callers under
+# `set -e` must guard the call (`|| true`, `if ! ...`); recording happens
+# HERE, so guarding loses no information. Interactive consent prompts keep
+# working while output is redirected because pkg_bootstrap_manager reads
+# /dev/tty, never the captured stdout/stderr.
+pkg_run_component() {
+  local component="$1"
+  shift
+  local log="$WEZCRAFT_INSTALL_LOG"
+  local offset started elapsed rc=0
+
+  if [ -f "$log" ]; then
+    offset="$(wc -c < "$log")" || offset=0
+  else
+    offset=0
+  fi
+  printf '\n===== wezcraft component: %s | started %s =====\n' \
+    "$component" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$log" 2>/dev/null || true
+
+  started="$(date +%s)"
+  show_progress "$component" installing
+  if "$@" >> "$log" 2>&1; then
+    rc=0
+  else
+    rc=$?
+  fi
+  elapsed=$(( $(date +%s) - started ))
+
+  if [ "$rc" -eq 0 ]; then
+    show_progress "$component" done "$elapsed"
+    return 0
+  fi
+
+  WEZCRAFT_FAILED_COMPONENTS+=("$component")
+  show_progress "$component" error
+  printf '  output captured in %s (tail):\n' "$log"
+  tail -c "+$((offset + 1))" "$log" 2>/dev/null | tail -n 20 \
+    | sed 's/^/    /' || true
+  return "$rc"
 }

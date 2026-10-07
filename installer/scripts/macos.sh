@@ -41,9 +41,13 @@ if [[ -d "$TARGET" ]]; then
 fi
 
 # --- 4. Copy config ---
-echo "Copying config files..."
-mkdir -p "$TARGET"
-rsync -a --exclude='.git' \
+# Component "config": the whole copy runs as ONE progress unit, so an
+# rsync failure is recorded in WEZCRAFT_FAILED_COMPONENTS instead of
+# aborting the run under `set -e` (the guard on the call is what keeps
+# `set -e` from firing on a recorded failure).
+_macos_copy_config() {
+  mkdir -p "$TARGET" || return 1
+  rsync -a --exclude='.git' \
           --exclude='.gitignore' \
           --exclude='.DS_Store' \
           --exclude='.atl' \
@@ -52,13 +56,14 @@ rsync -a --exclude='.git' \
           --exclude='/docs' \
           --exclude='README.md' \
           "$SOURCE/" "$TARGET/"
+}
+pkg_run_component config _macos_copy_config || true
 
 # --- 5. Create required directories ---
 mkdir -p "${HOME}/.local/share/wezterm/resurrect"
 mkdir -p "${HOME}/.local/state/wezterm"
 
 # --- 6. Install font ---
-echo "Installing FiraCode Nerd Font..."
 if [[ -f "${HOME}/Library/Fonts/FiraCodeNerdFont-Regular.ttf" ]]; then
   echo "FiraCode Nerd Font already installed."
 else
@@ -66,22 +71,26 @@ else
   rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFont-*.ttf
   rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontMono-*.ttf
   rm -f "${HOME}"/Library/Fonts/FiraCodeNerdFontPropo-*.ttf
-  if ! pkg_install font font-fira-code-nerd-font; then
+  # Component "font": already non-fatal, now in the shared progress shape
+  # — and the WARNING below still tells the user the install continues.
+  if ! pkg_run_component font pkg_install font font-fira-code-nerd-font; then
     echo "  WARNING: FiraCode Nerd Font could not be installed." >&2
     echo "           The install continues; status bar icons may show as placeholders." >&2
   fi
 fi
 
 # --- 7. Setup launchd agent ---
-echo "Setting up stats daemon..."
-STATS_SCRIPT="$TARGET/elements/statusbar/update_stats.sh"
-chmod +x "$STATS_SCRIPT"
+# Component "stats daemon": chmod + plist + load as ONE progress unit —
+# a launchd failure is recorded and the run reaches its end.
+_macos_stats_daemon() {
+  STATS_SCRIPT="$TARGET/elements/statusbar/update_stats.sh"
+  chmod +x "$STATS_SCRIPT" || return 1
 
-PLIST_DIR="${HOME}/Library/LaunchAgents"
-PLIST_FILE="$PLIST_DIR/com.user.wezterm-stats.plist"
-mkdir -p "$PLIST_DIR"
+  PLIST_DIR="${HOME}/Library/LaunchAgents"
+  PLIST_FILE="$PLIST_DIR/com.user.wezterm-stats.plist"
+  mkdir -p "$PLIST_DIR" || return 1
 
-cat > "$PLIST_FILE" <<PLIST
+  cat > "$PLIST_FILE" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -100,8 +109,10 @@ cat > "$PLIST_FILE" <<PLIST
 </plist>
 PLIST
 
-launchctl unload "$PLIST_FILE" 2>/dev/null || true
-launchctl load "$PLIST_FILE"
+  launchctl unload "$PLIST_FILE" 2>/dev/null || true
+  launchctl load "$PLIST_FILE"
+}
+pkg_run_component "stats daemon" _macos_stats_daemon || true
 
 # --- 8. Starship prompt ---
 echo ""
@@ -111,15 +122,17 @@ else
   read -rp "Install Starship prompt? [Y/n] " INSTALL_STARSHIP
   INSTALL_STARSHIP="${INSTALL_STARSHIP:-Y}"
   if [[ "$INSTALL_STARSHIP" =~ ^[Yy]$ ]]; then
-    echo "Installing Starship..."
-    pkg_install cli starship
-    echo "Starship installed."
+    # Component "starship": progress + log capture; the guard keeps a
+    # failed install from aborting the run under `set -e`.
+    pkg_run_component starship pkg_install cli starship || true
   fi
 fi
 
 # --- 9. Starship config ---
 STARSHIP_CONFIG="${HOME}/.config/starship/starship.toml"
-if [[ ! -f "$STARSHIP_CONFIG" ]]; then
+# Gated on the binary: a declined or failed starship install must not
+# reach `starship preset` (command-not-found would abort under set -e).
+if command -v starship &>/dev/null && [[ ! -f "$STARSHIP_CONFIG" ]]; then
   echo "Creating Starship config with nerd-font-symbols preset..."
   mkdir -p "${HOME}/.config/starship"
   starship preset nerd-font-symbols -o "$STARSHIP_CONFIG"
@@ -193,9 +206,9 @@ else
   read -rp "Install Atuin (shell history)? [Y/n] " INSTALL_ATUIN
   INSTALL_ATUIN="${INSTALL_ATUIN:-Y}"
   if [[ "$INSTALL_ATUIN" =~ ^[Yy]$ ]]; then
-    echo "Installing Atuin..."
-    pkg_install cli atuin
-    echo "Atuin installed."
+    # Component "atuin": progress + log capture; the guard keeps a
+    # failed install from aborting the run under `set -e`.
+    pkg_run_component atuin pkg_install cli atuin || true
   fi
 fi
 

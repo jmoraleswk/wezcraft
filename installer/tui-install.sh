@@ -161,21 +161,11 @@ confirm_install() {
     fi
 }
 
-# Show progress
-show_progress() {
-    local component="$1"
-    local status="$2"
-    
-    if [[ "$status" == "installing" ]]; then
-        echo -ne "${CYAN}⏳ Installing ${component}...${NC}"
-    elif [[ "$status" == "done" ]]; then
-        echo -e "\r${GREEN}✓ ${component} installed${NC}"
-    elif [[ "$status" == "skip" ]]; then
-        echo -e "\r${YELLOW}⊘ ${component} already installed${NC}"
-    elif [[ "$status" == "error" ]]; then
-        echo -e "\r${RED}✗ ${component} failed${NC}"
-    fi
-}
+# Component progress (⏳/✓/⊘/✗ single-line updates, log capture, failure
+# recording) is handled by show_progress + pkg_run_component, defined in
+# scripts/pkg.sh — the ONE file sourced by this script and both macOS
+# installers, because macos.sh / macos-tui.sh are separate processes and
+# cannot see a helper defined only here.
 
 # Main installation logic
 main() {

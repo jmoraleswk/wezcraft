@@ -1,0 +1,48 @@
+name: Windows Installer Tests
+
+# Pester tests for the PowerShell installer family. They run on a Windows
+# Server SKU (windows-latest), where the registry and Task Scheduler are real,
+# so the injectable seams the tests rely on are exercised against real system
+# facilities rather than mocks.
+
+on:
+  push:
+    paths:
+      - 'installer/scripts/wezcraft-win.ps1'
+      - 'installer/scripts/windows.ps1'
+      - 'installer/scripts/windows-uninstall.ps1'
+      - 'installer/tests-windows/**'
+      - '.github/workflows/windows-installer.yml'
+  pull_request:
+    paths:
+      - 'installer/scripts/wezcraft-win.ps1'
+      - 'installer/scripts/windows.ps1'
+      - 'installer/scripts/windows-uninstall.ps1'
+      - 'installer/tests-windows/**'
+      - '.github/workflows/windows-installer.yml'
+  workflow_dispatch:
+
+jobs:
+  pester:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install Pester (pinned)
+        run: |
+          # Pin the version instead of trusting whatever ships with the image:
+          # a runner default can change without notice and silently alter
+          # behavior. 5.7.1 is the latest stable Pester 5.
+          Install-Module Pester -Force -RequiredVersion 5.7.1 -Scope CurrentUser -SkipPublisherCheck
+
+      - name: Run the Windows installer tests
+        run: |
+          # -CI sets TestResult.Enabled = $true and Run.Exit = $true, so the
+          # step's exit code equals the number of failures. Without it,
+          # Invoke-Pester never fails the build and a red suite yields a green
+          # job -- the exact dishonest-exit-code anti-pattern this phase fixes.
+          Invoke-Pester -Path ./installer/tests-windows -CI -Output Detailed

@@ -1,46 +1,80 @@
 # WezTerm Installer (Windows)
 # Usage: .\scripts\windows.ps1 [-Source <path>]
+#
+# Shared logic lives in wezcraft-win.ps1 (dot-sourced below), the Windows
+# analogue of pkg.sh: native-command exit-code capture, failure collection, the
+# install log, per-component progress, and the end-of-run summary are owned
+# there, once. Every path tests must inject is a parameter whose default is the
+# value this script used to hardcode, so a bare `.\windows.ps1` behaves as before.
 
 param(
-    [string]$Source
+    [string]$Source,
+    [string]$Target = (Join-Path $env:USERPROFILE ".config\wezterm"),
+    [string]$FontDir = (Join-Path $env:LOCALAPPDATA "Microsoft\Windows\Fonts"),
+    [string]$TempRoot = $env:TEMP,
+    [string]$TaskName = "WezTermStats",
+    [string]$LogFile = (Join-Path $env:TEMP "wezcraft-install.log"),
+    [string]$ProfilePath
 )
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== WezTerm Installer (Windows) ===" -ForegroundColor Cyan
-Write-Host ""
+# Resolve the profile only after binding: defaulting it to $PROFILE inside the
+# param block is fragile under constrained / automation hosts.
+if (-not $ProfilePath) {
+    $ProfilePath = $PROFILE
+}
 
-# --- 1. Determine source ---
+. (Join-Path $PSScriptRoot "wezcraft-win.ps1")
+
+$TotalComponents = 6
+
+Write-Host "=== WezTerm Installer (Windows) ===" -ForegroundColor Cyan
+Write-InstallLog -LogFile $LogFile -Message "=== WezTerm Installer (Windows) started ==="
+
+# --- 1. Config: source, backup, copy, required directories ---
+Start-InstallComponent -Index 1 -Total $TotalComponents -Name "config" -LogFile $LogFile
+
+$CloneFailed = $false
 if (-not $Source) {
     # Clone from GitHub
     $RepoUrl = "https://github.com/jmoraleswk/wezcraft"
-    $TempDir = Join-Path $env:TEMP "wezcraft-install"
-    
+    $TempDir = Join-Path $TempRoot "wezcraft-install"
+
     if (Test-Path $TempDir) {
         Remove-Item -Recurse -Force $TempDir
     }
-    
+
     Write-Host "Cloning from: $RepoUrl"
-    git clone --depth 1 $RepoUrl $TempDir 2>$null
-    $Source = $TempDir
+    if (Invoke-CheckedNative -Label "config" -Command { git clone --depth 1 $RepoUrl $TempDir } -LogFile $LogFile) {
+        $Source = $TempDir
+    } else {
+        # The helper already recorded the clone as this run's failure; do not
+        # record a second entry for the same root cause below.
+        $CloneFailed = $true
+    }
 }
 
 if (-not (Test-Path $Source)) {
     Write-Host "Error: Source directory not found: $Source" -ForegroundColor Red
-    exit 1
+    Write-InstallLog -LogFile $LogFile -Level "ERROR" -Message "source directory not found: $Source"
+    if (-not $CloneFailed) {
+        # Only record a missing source when it is not the clone we just logged.
+        Add-InstallFailure -Component "config" -Message "source directory not found: $Source"
+    }
+    # Nothing to install from: finish through the honest summary instead of
+    # returning a silent success.
+    exit (Show-InstallSummary -LogFile $LogFile)
 }
 
-# --- 2. Define target ---
-$Target = Join-Path $env:USERPROFILE ".config\wezterm"
-
-# --- 3. Backup existing config ---
+# Backup existing config
 if (Test-Path $Target) {
     $Backup = "$Target.bak.$(Get-Date -UFormat %s)"
     Write-Host "Backing up existing config -> $Backup"
     Move-Item -Path $Target -Destination $Backup
 }
 
-# --- 4. Copy config ---
+# Copy config
 Write-Host "Copying config files..."
 New-Item -ItemType Directory -Force -Path $Target | Out-Null
 
@@ -55,72 +89,90 @@ Get-ChildItem -Path $Source -Exclude $Exclude | ForEach-Object {
     }
 }
 
-# --- 5. Create required directories ---
+# Create required directories
 New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\wezterm\resurrect" | Out-Null
 New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\wezterm\state" | Out-Null
 
-# --- 6. Install font ---
-Write-Host ""
+Write-InstallLog -LogFile $LogFile -Message "config installed to $Target"
+
+# --- 2. Install font ---
+Start-InstallComponent -Index 2 -Total $TotalComponents -Name "font" -LogFile $LogFile
 Write-Host "Installing FiraCode Nerd Font..."
-$FontDir = "$env:LOCALAPPDATA\Microsoft\Windows\Fonts"
 New-Item -ItemType Directory -Force -Path $FontDir | Out-Null
 
 $FontFile = "FiraCodeNerdFont-Regular.ttf"
 $FontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz"
 
 if (-not (Test-Path "$FontDir\$FontFile")) {
-    $TempFont = Join-Path $env:TEMP "FiraCode.tar.xz"
-    $TempExtract = Join-Path $env:TEMP "FiraCode-extract"
+    $TempFont = Join-Path $TempRoot "FiraCode.tar.xz"
+    $TempExtract = Join-Path $TempRoot "FiraCode-extract"
     Write-Host "Downloading font..."
     Invoke-WebRequest -Uri $FontUrl -OutFile $TempFont
-    
+
     # Extract tar.xz
     if (Test-Path $TempExtract) {
         Remove-Item -Recurse -Force $TempExtract
     }
     New-Item -ItemType Directory -Force -Path $TempExtract | Out-Null
-    
+
     Write-Host "Extracting font..."
-    tar -xf $TempFont -C $TempExtract 2>$null
-    
-    # Copy TTF files to font directory
-    $TtfFiles = Get-ChildItem -Path $TempExtract -Filter "*.ttf" -Recurse
-    if ($TtfFiles) {
-        foreach ($Ttf in $TtfFiles) {
-            Copy-Item -Path $Ttf.FullName -Destination $FontDir -Force
+    $ExtractOk = Invoke-CheckedNative -Label "font" -Command { tar -xf $TempFont -C $TempExtract } -LogFile $LogFile
+
+    if ($ExtractOk) {
+        # Copy TTF files to font directory
+        $TtfFiles = Get-ChildItem -Path $TempExtract -Filter "*.ttf" -Recurse
+        if ($TtfFiles) {
+            foreach ($Ttf in $TtfFiles) {
+                Copy-Item -Path $Ttf.FullName -Destination $FontDir -Force
+            }
+            Write-Host "FiraCode Nerd Font installed."
+            Write-InstallLog -LogFile $LogFile -Message "font installed to $FontDir"
+        } else {
+            Write-Host "Warning: No TTF files found in archive." -ForegroundColor Yellow
+            Write-Host "  Please extract manually from: $TempFont"
+            Add-InstallFailure -Component "font" -Message "no TTF files found in the downloaded archive"
+            Write-InstallLog -LogFile $LogFile -Level "WARN" -Message "no TTF files found in the downloaded archive"
         }
-        Write-Host "FiraCode Nerd Font installed."
-    } else {
-        Write-Host "Warning: No TTF files found in archive." -ForegroundColor Yellow
-        Write-Host "  Please extract manually from: $TempFont"
     }
-    
+
     # Cleanup
     Remove-Item -Recurse -Force $TempExtract -ErrorAction SilentlyContinue
 } else {
     Write-Host "FiraCode Nerd Font already installed."
+    Write-InstallLog -LogFile $LogFile -Message "font already installed"
 }
 
-# --- 7. Install Starship prompt ---
-Write-Host ""
+# --- 3. Install Starship prompt ---
+Start-InstallComponent -Index 3 -Total $TotalComponents -Name "starship" -LogFile $LogFile
 $StarshipInstalled = Get-Command starship -ErrorAction SilentlyContinue
 if ($StarshipInstalled) {
     Write-Host "Starship already installed: $(starship --version | Select-Object -First 1)"
+    Write-InstallLog -LogFile $LogFile -Message "starship already installed"
 } else {
     $InstallStarship = Read-Host "Install Starship prompt? [Y/n]"
     if ($InstallStarship -match '^[Yy]?$') {
         Write-Host "Installing Starship..."
-        winget install -e Starship.Starship
-        Write-Host "Starship installed."
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            if (Invoke-CheckedNative -Label "starship" -Command { winget install -e Starship.Starship } -LogFile $LogFile) {
+                Write-Host "Starship installed."
+            }
+        } else {
+            Add-InstallFailure -Component "starship" -Message "winget is not available; install Starship manually from https://starship.rs"
+            Write-Host "  [FAIL] winget is not available; cannot install Starship." -ForegroundColor Red
+            Write-Host "    Install it manually: https://starship.rs" -ForegroundColor Red
+            Write-InstallLog -LogFile $LogFile -Level "ERROR" -Message "winget not available; starship not installed"
+        }
+    } else {
+        Write-InstallLog -LogFile $LogFile -Message "starship installation declined by user"
     }
 }
 
-# --- 8. Starship config ---
+# --- Starship config (part of the starship component) ---
 $StarshipConfig = Join-Path $env:USERPROFILE ".config\starship.toml"
 if (-not (Test-Path $StarshipConfig)) {
     Write-Host "Creating default Starship config..."
     New-Item -ItemType Directory -Force -Path (Split-Path $StarshipConfig) | Out-Null
-    
+
     @"
 # Starship config for WezCraft
 format = """
@@ -160,56 +212,69 @@ success_symbol = "[❯](green)"
 error_symbol = "[❯](red)"
 "@ | Out-File -FilePath $StarshipConfig -Encoding UTF8
     Write-Host "Starship config created at: $StarshipConfig"
+    Write-InstallLog -LogFile $LogFile -Message "starship config created at $StarshipConfig"
 }
 
-# --- 9. Install Atuin ---
-Write-Host ""
+# --- 4. Install Atuin ---
+Start-InstallComponent -Index 4 -Total $TotalComponents -Name "atuin" -LogFile $LogFile
 $AtuinInstalled = Get-Command atuin -ErrorAction SilentlyContinue
 if ($AtuinInstalled) {
     Write-Host "Atuin already installed: $(atuin --version)"
+    Write-InstallLog -LogFile $LogFile -Message "atuin already installed"
 } else {
     $InstallAtuin = Read-Host "Install Atuin (shell history)? [Y/n]"
     if ($InstallAtuin -match '^[Yy]?$') {
         Write-Host "Installing Atuin..."
-        winget install -e Atuinsh.Atuin
-        Write-Host "Atuin installed."
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            if (Invoke-CheckedNative -Label "atuin" -Command { winget install -e Atuinsh.Atuin } -LogFile $LogFile) {
+                Write-Host "Atuin installed."
+            }
+        } else {
+            Add-InstallFailure -Component "atuin" -Message "winget is not available; install Atuin manually from https://atuin.sh"
+            Write-Host "  [FAIL] winget is not available; cannot install Atuin." -ForegroundColor Red
+            Write-Host "    Install it manually: https://atuin.sh" -ForegroundColor Red
+            Write-InstallLog -LogFile $LogFile -Level "ERROR" -Message "winget not available; atuin not installed"
+        }
+    } else {
+        Write-InstallLog -LogFile $LogFile -Message "atuin installation declined by user"
     }
 }
 
-# --- 10. Shell integration ---
-Write-Host ""
+# --- 5. Shell integration ---
+Start-InstallComponent -Index 5 -Total $TotalComponents -Name "shell integration" -LogFile $LogFile
 
 # Ensure PowerShell profile exists
-if (-not (Test-Path $PROFILE)) {
-    New-Item -ItemType File -Path $PROFILE -Force | Out-Null
+if (-not (Test-Path $ProfilePath)) {
+    New-Item -ItemType File -Path $ProfilePath -Force | Out-Null
 }
 
 # Starship
 $StarshipPath = Get-Command starship -ErrorAction SilentlyContinue
 if ($StarshipPath) {
-    $ProfileContent = Get-Content $PROFILE -ErrorAction SilentlyContinue
+    $ProfileContent = Get-Content $ProfilePath -ErrorAction SilentlyContinue
     if ($ProfileContent -notmatch "starship init") {
         Write-Host "Adding Starship to PowerShell profile..."
-        'Invoke-Expression (&starship init powershell)' | Out-File -FilePath $PROFILE -Append -Encoding UTF8
+        'Invoke-Expression (&starship init powershell)' | Out-File -FilePath $ProfilePath -Append -Encoding UTF8
     }
 }
 
 # Atuin
 $AtuinPath = Get-Command atuin -ErrorAction SilentlyContinue
 if ($AtuinPath) {
-    $ProfileContent = Get-Content $PROFILE -ErrorAction SilentlyContinue
+    $ProfileContent = Get-Content $ProfilePath -ErrorAction SilentlyContinue
     if ($ProfileContent -notmatch "atuin init") {
         Write-Host "Adding Atuin to PowerShell profile..."
-        'atuin init powershell | Out-String | Invoke-Expression' | Out-File -FilePath $PROFILE -Append -Encoding UTF8
+        'atuin init powershell | Out-String | Invoke-Expression' | Out-File -FilePath $ProfilePath -Append -Encoding UTF8
     }
 }
 
-# --- 11. Stats daemon (Task Scheduler) ---
-Write-Host ""
+Write-InstallLog -LogFile $LogFile -Message "shell integration applied to $ProfilePath"
+
+# --- 6. Stats daemon (Task Scheduler) ---
+Start-InstallComponent -Index 6 -Total $TotalComponents -Name "stats daemon" -LogFile $LogFile
 Write-Host "Installing stats daemon (CPU/RAM)..."
 
 $StatsScript = Join-Path $Target "elements\statusbar\update_stats_windows.ps1"
-$TaskName = "WezTermStats"
 
 # Remove existing task if present
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
@@ -226,19 +291,26 @@ Start-ScheduledTask -TaskName $TaskName
 
 Write-Host "Stats daemon installed and started."
 Write-Host "Task: $TaskName (runs at logon)"
+Write-InstallLog -LogFile $LogFile -Message "stats daemon installed and started (task $TaskName)"
 
-# --- 12. Summary ---
-Write-Host ""
-Write-Host "=== Done ===" -ForegroundColor Green
-Write-Host "Config installed to: $Target"
-Write-Host "Plugin: resurrect.wezterm (bundled)"
-Write-Host "Font: FiraCode Nerd Font"
-if ($StarshipInstalled) {
-    Write-Host "Starship: installed"
+# --- 7. Summary ---
+$ExitCode = Show-InstallSummary -LogFile $LogFile
+
+# Never print positive claims on a failed run: a red failure list followed by
+# "active"/"installed" would misreport the outcome. The success text is gated
+# on the summary's result; the exit code is always the summary's.
+if ($ExitCode -eq 0) {
+    Write-Host "Config installed to: $Target"
+    Write-Host "Plugin: resurrect.wezterm (bundled)"
+    Write-Host "Font: FiraCode Nerd Font"
+    if ($StarshipInstalled) {
+        Write-Host "Starship: installed"
+    }
+    if ($AtuinInstalled) {
+        Write-Host "Atuin: installed"
+    }
+    Write-Host "Stats daemon: active (Task Scheduler)"
+    Write-Host ""
+    Write-Host "Restart your terminal to apply changes."
 }
-if ($AtuinInstalled) {
-    Write-Host "Atuin: installed"
-}
-Write-Host "Stats daemon: active (Task Scheduler)"
-Write-Host ""
-Write-Host "Restart your terminal to apply changes."
+exit $ExitCode

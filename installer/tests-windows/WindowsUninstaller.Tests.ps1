@@ -97,16 +97,16 @@ Describe 'windows-uninstall.ps1 gates every removal on the install state' -Skip:
         & $Uninstall -Target (Join-Path $Root '.config/wezterm') -SavesDir (Join-Path $Root 'saves') -FontDir $Fonts -TempRoot $Temp -StateFile $State -ProfilePath $ProfileFile -LogFile (Join-Path $Root 'uninstall.log') | Out-Null
 
         $LASTEXITCODE | Should -Be 0
-        # Declined: owned files and their state survive.
+        # Declined: owned files and their prompted state survive.
         Test-Path (Join-Path $Fonts 'Keep.ttf') | Should -BeTrue
-        Test-Path $StatsFile | Should -BeTrue
         $Remaining = @(Get-InstallState -StateFile $State)
         $Remaining | Should -Contain 'win:font:Keep.ttf'
-        $Remaining | Should -Contain "win:path:$StatsFile"
         $Remaining | Should -Contain 'win:task:WezTermStats'
-        # Shell integration is ours and has no prompt: removed even on a
-        # fully-declined run, exactly at the recorded lines.
+        # Shell integration (our exact lines) and temp artifacts under the
+        # temp root are ours without a prompt: removed even on a declined run.
         (Get-Content -Path $ProfileFile -Raw) | Should -Not -Match 'starship init'
+        Test-Path $StatsFile | Should -BeFalse
+        $Remaining | Should -Not -Contain "win:path:$StatsFile"
     }
 
     It 'removes exactly the owned entries, keeps strangers, and deletes the state' {

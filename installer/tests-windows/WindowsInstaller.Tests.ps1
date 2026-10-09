@@ -92,6 +92,15 @@ Describe 'windows.ps1 parameter defaults' -Skip:(-not $OnWindows) {
         $Defaults['LogFile'] | Should -Be (Join-Path $env:TEMP 'wezcraft-install.log')
     }
 
+    It 'pins the font archive URL to the same release pkg.sh verifies' {
+        $Defaults['FontUrl'] | Should -Match 'releases/download/v3\.5\.1/FiraCode\.zip'
+        $Defaults['FontUrl'] | Should -Not -Match 'latest/download'
+    }
+
+    It 'pins the font archive SHA-256 from the same release' {
+        $Defaults['FontSha256'] | Should -MatchExactly '^[0-9a-f]{64}$'
+    }
+
     It 'gives $ProfilePath no fragile in-param-block default' {
         $Defaults.ContainsKey('ProfilePath') | Should -BeFalse
     }
@@ -133,7 +142,7 @@ Describe 'windows.ps1 routes native commands through the helper' -Skip:(-not $On
         # Structural check, not a substring check: a native call sitting bare in
         # the body -- the exact way a helper could be bypassed -- would have a
         # nearest enclosing command that is not Invoke-CheckedNative.
-        $NativeNames = @('git', 'tar', 'winget')
+        $NativeNames = @('git', 'winget')
         $NativeCalls = @($AllCommands | Where-Object { $NativeNames -contains $_.GetCommandName() })
 
         $NativeCalls.Count | Should -BeGreaterThan 0

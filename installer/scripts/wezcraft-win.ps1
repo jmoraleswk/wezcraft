@@ -242,3 +242,140 @@ function Show-InstallSummary {
     }
     return 1
 }
+
+# SHA-256 of a file as hex. Lives here so the checksum path is testable
+# against an externally computed constant instead of a re-statement.
+function Get-FileSha256 {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    # Get-FileHash returns uppercase hex; normalize so callers can compare
+    # against pinned lowercase constants.
+    return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+# Downloads a URL to a file. Records a failure and returns $false instead of
+# throwing, so the caller keeps running through the honest summary.
+# Failure ExitCodes: -4 download failed.
+function Save-FontArchive {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutFile,
+
+        [string]$LogFile
+    )
+
+    try {
+        Invoke-WebRequest -Uri $Url -OutFile $OutFile -ErrorAction Stop
+        if ($LogFile) { Write-InstallLog -LogFile $LogFile -Message "downloaded font archive from $Url" }
+        return $true
+    } catch {
+        Add-InstallFailure -Component 'font' -Message "font download failed: $($_.Exception.Message)" -ExitCode -4
+        if ($LogFile) { Write-InstallLog -LogFile $LogFile -Level 'ERROR' -Message "font download failed: $($_.Exception.Message)" }
+        Write-Host "  [FAIL] font download failed: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+}
+
+# Registers one font file for the current user: a REG_SZ under the per-user
+# fonts key whose data is the FULL path (required for files outside
+# %WinDir%\Fonts). Idempotent via -Force. Failure ExitCode: -2 registry write.
+function Register-UserFont {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TtfPath,
+
+        [string]$LogFile
+    )
+
+    $Key = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+    $ValueName = '{0} (TrueType)' -f [System.IO.Path]::GetFileNameWithoutExtension($TtfPath)
+    try {
+        New-Item -Path $Key -Force -ErrorAction Stop | Out-Null
+        New-ItemProperty -Path $Key -Name $ValueName -Value $TtfPath -PropertyType String -Force -ErrorAction Stop | Out-Null
+        if ($LogFile) { Write-InstallLog -LogFile $LogFile -Message "registered font $ValueName -> $TtfPath" }
+        return $true
+    } catch {
+        Add-InstallFailure -Component 'font' -Message "registry write failed for ${ValueName}: $($_.Exception.Message)" -ExitCode -2
+        if ($LogFile) { Write-InstallLog -LogFile $LogFile -Level 'ERROR' -Message "font registry write failed: $($_.Exception.Message)" }
+        Write-Host "  [FAIL] font registry write failed for ${ValueName}" -ForegroundColor Red
+        return $false
+    }
+}
+
+# Verifies a font archive against the pinned SHA-256, extracts it, copies
+# every .ttf into the user's font directory, and registers each one in HKCU.
+# Bytes that cannot be verified are never installed: a checksum mismatch
+# fails hard before extraction. The extraction directory is always removed.
+# Failure ExitCodes: -3 checksum mismatch, -5 archive unusable.
+function Install-FontArchive {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ArchivePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedSha256,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FontDir,
+
+        [string]$ExtractRoot = $env:TEMP,
+
+        [string]$LogFile
+    )
+
+    $ErrorActionPreference = 'Stop'
+
+    $ActualSha256 = Get-FileSha256 -Path $ArchivePath
+    if ($ActualSha256 -ne $ExpectedSha256) {
+        Add-InstallFailure -Component 'font' -Message "SHA-256 mismatch: expected $ExpectedSha256, got $ActualSha256" -ExitCode -3
+        if ($LogFile) { Write-InstallLog -LogFile $LogFile -Level 'ERROR' -Message 'font archive checksum mismatch; nothing installed' }
+        Write-Host '  [FAIL] font archive SHA-256 mismatch; nothing installed' -ForegroundColor Red
+        return $false
+    }
+
+    $ExtractDir = Join-Path $ExtractRoot 'wezcraft-font-extract'
+    try {
+        if (Test-Path $ExtractDir) {
+            Remove-Item -Path $ExtractDir -Recurse -Force
+        }
+        Expand-Archive -Path $ArchivePath -DestinationPath $ExtractDir
+
+        $TtfFiles = @(Get-ChildItem -Path $ExtractDir -Filter '*.ttf' -Recurse)
+        if ($TtfFiles.Count -eq 0) {
+            Add-InstallFailure -Component 'font' -Message 'no TTF files in the verified archive' -ExitCode -5
+            if ($LogFile) { Write-InstallLog -LogFile $LogFile -Level 'ERROR' -Message 'no TTF files in the font archive' }
+            Write-Host '  [FAIL] no TTF files in the font archive' -ForegroundColor Red
+            return $false
+        }
+
+        New-Item -ItemType Directory -Force -Path $FontDir | Out-Null
+        foreach ($Ttf in $TtfFiles) {
+            Copy-Item -Path $Ttf.FullName -Destination $FontDir -Force
+            $Installed = Join-Path $FontDir $Ttf.Name
+            if (-not (Register-UserFont -TtfPath $Installed -LogFile $LogFile)) {
+                return $false
+            }
+        }
+        if ($LogFile) { Write-InstallLog -LogFile $LogFile -Message "installed $($TtfFiles.Count) font files to $FontDir" }
+        return $true
+    } catch {
+        Add-InstallFailure -Component 'font' -Message "font install failed: $($_.Exception.Message)" -ExitCode -5
+        if ($LogFile) { Write-InstallLog -LogFile $LogFile -Level 'ERROR' -Message "font install failed: $($_.Exception.Message)" }
+        Write-Host "  [FAIL] font install failed: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    } finally {
+        if (Test-Path $ExtractDir) {
+            Remove-Item -Path $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}

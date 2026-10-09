@@ -130,7 +130,7 @@ directly without `--source` exits with an error before any side effects.
 2. Backs up existing `~/.config/wezterm/` (timestamped)
 3. Copies config files (excluding non-essential dirs)
 4. Creates required directories (`~\AppData\Local\wezterm\resurrect\`)
-5. Installs FiraCode Nerd Font (automated download + extract)
+5. Installs FiraCode Nerd Font (pinned `v3.5.1` zip, SHA-256-verified, per-user registry registration)
 6. Installs Starship prompt via WinGet (if not already installed) + shell integration
 7. Creates default Starship config
 8. Installs Atuin via WinGet (if not already installed) + shell integration

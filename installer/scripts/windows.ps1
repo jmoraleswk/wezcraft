@@ -11,6 +11,10 @@ param(
     [string]$Source,
     [string]$Target = (Join-Path $env:USERPROFILE ".config\wezterm"),
     [string]$FontDir = (Join-Path $env:LOCALAPPDATA "Microsoft\Windows\Fonts"),
+    # Pinned font source: the same FiraCode.zip release and checksum that
+    # pkg.sh verifies on macOS/Linux. Bump both together.
+    [string]$FontUrl = 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/FiraCode.zip',
+    [string]$FontSha256 = '239395baf60c89b2eaf4862b6b09db0ef95605cd3e8eef51c00345822a81a665',
     [string]$TempRoot = $env:TEMP,
     [string]$TaskName = "WezTermStats",
     [string]$LogFile = (Join-Path $env:TEMP "wezcraft-install.log"),
@@ -101,42 +105,21 @@ Write-Host "Installing FiraCode Nerd Font..."
 New-Item -ItemType Directory -Force -Path $FontDir | Out-Null
 
 $FontFile = "FiraCodeNerdFont-Regular.ttf"
-$FontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz"
 
 if (-not (Test-Path "$FontDir\$FontFile")) {
-    $TempFont = Join-Path $TempRoot "FiraCode.tar.xz"
-    $TempExtract = Join-Path $TempRoot "FiraCode-extract"
-    Write-Host "Downloading font..."
-    Invoke-WebRequest -Uri $FontUrl -OutFile $TempFont
+    $TempFont = Join-Path $TempRoot 'FiraCode.zip'
+    Write-Host 'Downloading pinned font archive (v3.5.1)...'
+    $DownloadOk = Save-FontArchive -Url $FontUrl -OutFile $TempFont -LogFile $LogFile
 
-    # Extract tar.xz
-    if (Test-Path $TempExtract) {
-        Remove-Item -Recurse -Force $TempExtract
-    }
-    New-Item -ItemType Directory -Force -Path $TempExtract | Out-Null
-
-    Write-Host "Extracting font..."
-    $ExtractOk = Invoke-CheckedNative -Label "font" -Command { tar -xf $TempFont -C $TempExtract } -LogFile $LogFile
-
-    if ($ExtractOk) {
-        # Copy TTF files to font directory
-        $TtfFiles = Get-ChildItem -Path $TempExtract -Filter "*.ttf" -Recurse
-        if ($TtfFiles) {
-            foreach ($Ttf in $TtfFiles) {
-                Copy-Item -Path $Ttf.FullName -Destination $FontDir -Force
-            }
-            Write-Host "FiraCode Nerd Font installed."
-            Write-InstallLog -LogFile $LogFile -Message "font installed to $FontDir"
-        } else {
-            Write-Host "Warning: No TTF files found in archive." -ForegroundColor Yellow
-            Write-Host "  Please extract manually from: $TempFont"
-            Add-InstallFailure -Component "font" -Message "no TTF files found in the downloaded archive"
-            Write-InstallLog -LogFile $LogFile -Level "WARN" -Message "no TTF files found in the downloaded archive"
+    if ($DownloadOk) {
+        $FontOk = Install-FontArchive -ArchivePath $TempFont -ExpectedSha256 $FontSha256 -FontDir $FontDir -ExtractRoot $TempRoot -LogFile $LogFile
+        if ($FontOk) {
+            Write-Host 'FiraCode Nerd Font installed and registered.'
         }
     }
 
-    # Cleanup
-    Remove-Item -Recurse -Force $TempExtract -ErrorAction SilentlyContinue
+    # Cleanup: the downloaded archive is never left behind.
+    Remove-Item -Path $TempFont -Force -ErrorAction SilentlyContinue
 } else {
     Write-Host "FiraCode Nerd Font already installed."
     Write-InstallLog -LogFile $LogFile -Message "font already installed"

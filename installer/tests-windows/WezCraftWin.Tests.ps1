@@ -195,5 +195,62 @@ Describe 'WezCraft shared Windows helpers' {
             $Failures.Count | Should -Be 1
             $Failures[0].ExitCode | Should -Be -5
         }
+
+        It 'records each installed font file and registry value in the install state' {
+            $Fonts = Join-Path $TestDrive 'fonts-state'
+            $State = Join-Path $TestDrive 'installed-state-font'
+
+            $Ok = Install-FontArchive -ArchivePath $Archive -ExpectedSha256 (Get-FileSha256 -Path $Archive) -FontDir $Fonts -ExtractRoot (Join-Path $TestDrive 'extract-state') -StateFile $State
+
+            $Ok | Should -BeTrue
+            $Entries = @(Get-InstallState -StateFile $State)
+            $Entries | Should -Contain 'win:font:WezCraftTest-Regular.ttf'
+            $Entries | Should -Contain 'win:font:WezCraftTest-Bold.ttf'
+            $Entries | Should -Contain 'win:hkcu:WezCraftTest-Regular (TrueType)'
+            $Entries | Should -Contain 'win:hkcu:WezCraftTest-Bold (TrueType)'
+            $Entries.Count | Should -Be 4
+        }
+    }
+
+    Context 'install state helpers (pkg.sh mirror)' {
+        It 'adds entries sorted and unique, ignoring duplicates' {
+            $State = Join-Path $TestDrive 'state-add'
+
+            Add-InstallState -StateFile $State -Entry 'win:task:WezTermStats'
+            Add-InstallState -StateFile $State -Entry 'win:font:B.ttf'
+            Add-InstallState -StateFile $State -Entry 'win:font:A.ttf'
+            Add-InstallState -StateFile $State -Entry 'win:font:A.ttf'
+
+            ((Get-InstallState -StateFile $State) -join '|') | Should -BeExactly 'win:font:A.ttf|win:font:B.ttf|win:task:WezTermStats'
+        }
+
+        It 'answers has/contains correctly and creates the parent directory' {
+            $State = Join-Path $TestDrive 'nested/dir/state-has'
+
+            Add-InstallState -StateFile $State -Entry 'win:profile:starship-init'
+
+            Test-InstallState -StateFile $State -Entry 'win:profile:starship-init' | Should -BeTrue
+            Test-InstallState -StateFile $State -Entry 'win:profile:atuin-init' | Should -BeFalse
+        }
+
+        It 'removes one entry and keeps the rest' {
+            $State = Join-Path $TestDrive 'state-remove'
+            Add-InstallState -StateFile $State -Entry 'win:font:A.ttf'
+            Add-InstallState -StateFile $State -Entry 'win:hkcu:A (TrueType)'
+
+            Remove-InstallState -StateFile $State -Entry 'win:font:A.ttf'
+
+            ((Get-InstallState -StateFile $State) -join '|') | Should -BeExactly 'win:hkcu:A (TrueType)'
+        }
+
+        It 'deletes the file when the last entry is removed' {
+            $State = Join-Path $TestDrive 'state-last'
+            Add-InstallState -StateFile $State -Entry 'win:task:WezTermStats'
+
+            Remove-InstallState -StateFile $State -Entry 'win:task:WezTermStats'
+
+            Test-Path $State | Should -BeFalse
+            @(Get-InstallState -StateFile $State).Count | Should -Be 0
+        }
     }
 }

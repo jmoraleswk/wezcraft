@@ -284,6 +284,18 @@ function Save-FontArchive {
     }
 }
 
+# The registry value name for a user font file. One owner: the installer
+# records it in the install state and the uninstaller removes exactly this.
+function Get-UserFontValueName {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TtfPath
+    )
+
+    return '{0} (TrueType)' -f [System.IO.Path]::GetFileNameWithoutExtension($TtfPath)
+}
+
 # Registers one font file for the current user: a REG_SZ under the per-user
 # fonts key whose data is the FULL path (required for files outside
 # %WinDir%\Fonts). Idempotent via -Force. Failure ExitCode: -2 registry write.
@@ -297,7 +309,7 @@ function Register-UserFont {
     )
 
     $Key = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
-    $ValueName = '{0} (TrueType)' -f [System.IO.Path]::GetFileNameWithoutExtension($TtfPath)
+    $ValueName = Get-UserFontValueName -TtfPath $TtfPath
     try {
         New-Item -Path $Key -Force -ErrorAction Stop | Out-Null
         New-ItemProperty -Path $Key -Name $ValueName -Value $TtfPath -PropertyType String -Force -ErrorAction Stop | Out-Null
@@ -329,6 +341,10 @@ function Install-FontArchive {
         [string]$FontDir,
 
         [string]$ExtractRoot = $env:TEMP,
+
+        # When provided, every owned font file and registry value is recorded
+        # so the uninstaller removes exactly these (I3) and nothing else.
+        [string]$StateFile,
 
         [string]$LogFile
     )
@@ -365,6 +381,10 @@ function Install-FontArchive {
             if (-not (Register-UserFont -TtfPath $Installed -LogFile $LogFile)) {
                 return $false
             }
+            if ($StateFile) {
+                Add-InstallState -StateFile $StateFile -Entry "win:font:$($Ttf.Name)"
+                Add-InstallState -StateFile $StateFile -Entry "win:hkcu:$(Get-UserFontValueName -TtfPath $Installed)"
+            }
         }
         if ($LogFile) { Write-InstallLog -LogFile $LogFile -Message "installed $($TtfFiles.Count) font files to $FontDir" }
         return $true
@@ -379,3 +399,93 @@ function Install-FontArchive {
         }
     }
 }
+
+# --- Install-state tracking ------------------------------------------------
+# Windows mirror of pkg.sh's installed-pkgs (decision D2): one owned entry per
+# line, sorted and unique, at %LOCALAPPDATA%\wezcraft\installed-state. The
+# uninstaller removes ONLY what is listed here, so a tool the user already had
+# is never touched (the fzf lesson). Keys:
+#   win:font:<file.ttf>    font file copied by the installer
+#   win:hkcu:<value>       per-user font registry value
+#   win:task:<name>        scheduled task
+#   win:profile:<slot>     shell-integration line (starship-init, atuin-init)
+#   win:winget:<id>        winget package THIS installer installed
+#   win:path:<abs path>    file/dir the installer created
+
+function Add-InstallState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StateFile,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Entry
+    )
+
+    $Directory = Split-Path -Parent $StateFile
+    if ($Directory -and -not (Test-Path $Directory)) {
+        New-Item -ItemType Directory -Force -Path $Directory | Out-Null
+    }
+
+    $Lines = @()
+    if (Test-Path $StateFile) {
+        $Lines = @(Get-Content -Path $StateFile)
+    }
+    if ($Lines -notcontains $Entry) {
+        $Lines += $Entry
+        Set-Content -Path $StateFile -Value ($Lines | Sort-Object) -Encoding UTF8
+    }
+}
+
+function Get-InstallState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StateFile
+    )
+
+    if (-not (Test-Path $StateFile)) {
+        return @()
+    }
+    return @(Get-Content -Path $StateFile | Where-Object { $_ })
+}
+
+function Test-InstallState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StateFile,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Entry
+    )
+
+    return (Get-InstallState -StateFile $StateFile) -contains $Entry
+}
+
+function Remove-InstallState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StateFile,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Entry
+    )
+
+    if (-not (Test-Path $StateFile)) {
+        return
+    }
+    $Remaining = @(Get-Content -Path $StateFile | Where-Object { $_ -and $_ -ne $Entry })
+    if ($Remaining.Count -eq 0) {
+        Remove-Item -Path $StateFile -Force
+    } else {
+        Set-Content -Path $StateFile -Value $Remaining -Encoding UTF8
+    }
+}
+
+# The exact shell-integration lines the installer appends to the profile.
+# The uninstaller removes exactly these strings -- never a fuzzy pattern that
+# could eat a look-alike line the user wrote.
+$WezCraftStarshipProfileLine = 'Invoke-Expression (&starship init powershell)'
+$WezCraftAtuinProfileLine = 'atuin init powershell | Out-String | Invoke-Expression'

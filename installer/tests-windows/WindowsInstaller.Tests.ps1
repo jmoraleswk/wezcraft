@@ -92,6 +92,10 @@ Describe 'windows.ps1 parameter defaults' -Skip:(-not $OnWindows) {
         $Defaults['LogFile'] | Should -Be (Join-Path $env:TEMP 'wezcraft-install.log')
     }
 
+    It 'resolves $StateFile to wezcraft\installed-state under LOCALAPPDATA' {
+        $Defaults['StateFile'] | Should -Be (Join-Path $env:LOCALAPPDATA 'wezcraft\installed-state')
+    }
+
     It 'pins the font archive URL to the same release pkg.sh verifies' {
         $Defaults['FontUrl'] | Should -Match 'releases/download/v3\.5\.1/FiraCode\.zip'
         $Defaults['FontUrl'] | Should -Not -Match 'latest/download'

@@ -18,6 +18,7 @@ param(
     [string]$TempRoot = $env:TEMP,
     [string]$TaskName = "WezTermStats",
     [string]$LogFile = (Join-Path $env:TEMP "wezcraft-install.log"),
+    [string]$StateFile = (Join-Path $env:LOCALAPPDATA 'wezcraft\installed-state'),
     [string]$ProfilePath
 )
 
@@ -52,6 +53,7 @@ if (-not $Source) {
     Write-Host "Cloning from: $RepoUrl"
     if (Invoke-CheckedNative -Label "config" -Command { git clone --depth 1 $RepoUrl $TempDir } -LogFile $LogFile) {
         $Source = $TempDir
+        Add-InstallState -StateFile $StateFile -Entry "win:path:$TempDir"
     } else {
         # The helper already recorded the clone as this run's failure; do not
         # record a second entry for the same root cause below.
@@ -112,7 +114,7 @@ if (-not (Test-Path "$FontDir\$FontFile")) {
     $DownloadOk = Save-FontArchive -Url $FontUrl -OutFile $TempFont -LogFile $LogFile
 
     if ($DownloadOk) {
-        $FontOk = Install-FontArchive -ArchivePath $TempFont -ExpectedSha256 $FontSha256 -FontDir $FontDir -ExtractRoot $TempRoot -LogFile $LogFile
+        $FontOk = Install-FontArchive -ArchivePath $TempFont -ExpectedSha256 $FontSha256 -FontDir $FontDir -ExtractRoot $TempRoot -StateFile $StateFile -LogFile $LogFile
         if ($FontOk) {
             Write-Host 'FiraCode Nerd Font installed and registered.'
         }
@@ -138,6 +140,9 @@ if ($StarshipInstalled) {
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             if (Invoke-CheckedNative -Label "starship" -Command { winget install -e Starship.Starship } -LogFile $LogFile) {
                 Write-Host "Starship installed."
+                # Owned only when WE installed it: a pre-existing starship is
+                # never ours to uninstall (I3).
+                Add-InstallState -StateFile $StateFile -Entry 'win:winget:Starship.Starship'
             }
         } else {
             Add-InstallFailure -Component "starship" -Message "winget is not available; install Starship manually from https://starship.rs"
@@ -196,6 +201,7 @@ error_symbol = "[❯](red)"
 "@ | Out-File -FilePath $StarshipConfig -Encoding UTF8
     Write-Host "Starship config created at: $StarshipConfig"
     Write-InstallLog -LogFile $LogFile -Message "starship config created at $StarshipConfig"
+    Add-InstallState -StateFile $StateFile -Entry "win:path:$StarshipConfig"
 }
 
 # --- 4. Install Atuin ---
@@ -211,6 +217,7 @@ if ($AtuinInstalled) {
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             if (Invoke-CheckedNative -Label "atuin" -Command { winget install -e Atuinsh.Atuin } -LogFile $LogFile) {
                 Write-Host "Atuin installed."
+                Add-InstallState -StateFile $StateFile -Entry 'win:winget:Atuinsh.Atuin'
             }
         } else {
             Add-InstallFailure -Component "atuin" -Message "winget is not available; install Atuin manually from https://atuin.sh"
@@ -237,7 +244,8 @@ if ($StarshipPath) {
     $ProfileContent = Get-Content $ProfilePath -ErrorAction SilentlyContinue
     if ($ProfileContent -notmatch "starship init") {
         Write-Host "Adding Starship to PowerShell profile..."
-        'Invoke-Expression (&starship init powershell)' | Out-File -FilePath $ProfilePath -Append -Encoding UTF8
+        $WezCraftStarshipProfileLine | Out-File -FilePath $ProfilePath -Append -Encoding UTF8
+        Add-InstallState -StateFile $StateFile -Entry 'win:profile:starship-init'
     }
 }
 
@@ -247,7 +255,8 @@ if ($AtuinPath) {
     $ProfileContent = Get-Content $ProfilePath -ErrorAction SilentlyContinue
     if ($ProfileContent -notmatch "atuin init") {
         Write-Host "Adding Atuin to PowerShell profile..."
-        'atuin init powershell | Out-String | Invoke-Expression' | Out-File -FilePath $ProfilePath -Append -Encoding UTF8
+        $WezCraftAtuinProfileLine | Out-File -FilePath $ProfilePath -Append -Encoding UTF8
+        Add-InstallState -StateFile $StateFile -Entry 'win:profile:atuin-init'
     }
 }
 
@@ -275,6 +284,10 @@ Start-ScheduledTask -TaskName $TaskName
 Write-Host "Stats daemon installed and started."
 Write-Host "Task: $TaskName (runs at logon)"
 Write-InstallLog -LogFile $LogFile -Message "stats daemon installed and started (task $TaskName)"
+Add-InstallState -StateFile $StateFile -Entry "win:task:$TaskName"
+# update_stats_windows.ps1 writes its file here; own the path so the
+# uninstaller can remove the artifact the daemon produces.
+Add-InstallState -StateFile $StateFile -Entry "win:path:$(Join-Path $TempRoot 'wezterm_stats.txt')"
 
 # --- 7. Summary ---
 $ExitCode = Show-InstallSummary -LogFile $LogFile

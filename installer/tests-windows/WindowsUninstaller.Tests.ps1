@@ -37,11 +37,14 @@ Describe 'windows-uninstall.ps1 gates every removal on the install state' -Skip:
     AfterAll {
         Unregister-ScheduledTask -TaskName 'WezCraftUninstTask' -Confirm:$false -ErrorAction SilentlyContinue
         Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts' -Name 'WezCraftUninstTest (TrueType)' -ErrorAction SilentlyContinue
+        Remove-Variable -Name WezCraftTestPrompts -Scope Global -ErrorAction SilentlyContinue
     }
 
     BeforeEach {
         Clear-InstallFailure
-        $script:Prompts = [System.Collections.Generic.List[string]]::new()
+        # Global on purpose: a Pester mock body executes outside the test
+        # file's scope chain, so $script: variables are invisible there.
+        $global:WezCraftTestPrompts = [System.Collections.Generic.List[string]]::new()
     }
 
     It 'removes nothing and prompts nothing when the install state is empty' {
@@ -56,12 +59,15 @@ Describe 'windows-uninstall.ps1 gates every removal on the install state' -Skip:
         $ProfileFile = Join-Path $Root 'profile.ps1'
         # A line that LOOKS like ours but was written by the user.
         Set-Content -Path $ProfileFile -Value $WezCraftStarshipProfileLine
-        Mock Read-Host { [void]$script:Prompts.Add([string]$Prompt); 'y' }
+        Mock Read-Host {
+            $Text = "$Prompt"; if (-not $Text) { $Text = "$args" }
+            [void]$global:WezCraftTestPrompts.Add($Text); 'y'
+        }
 
         & $Uninstall -Target $Target -FontDir $Fonts -TempRoot (Join-Path $Root 'temp') -StateFile (Join-Path $Root 'state') -ProfilePath $ProfileFile -LogFile (Join-Path $Root 'uninstall.log') | Out-Null
 
         $LASTEXITCODE | Should -Be 0
-        $script:Prompts.Count | Should -Be 0
+        $global:WezCraftTestPrompts.Count | Should -Be 0
         Test-Path (Join-Path $Target 'wezterm.lua') | Should -BeTrue
         Test-Path (Join-Path $Fonts 'PreExisting.ttf') | Should -BeTrue
         (Get-Content -Path $ProfileFile -Raw) | Should -Match 'starship init'
@@ -83,7 +89,10 @@ Describe 'windows-uninstall.ps1 gates every removal on the install state' -Skip:
         Add-InstallState -StateFile $State -Entry 'win:profile:starship-init'
         Add-InstallState -StateFile $State -Entry "win:path:$StatsFile"
         Add-InstallState -StateFile $State -Entry 'win:task:WezTermStats'
-        Mock Read-Host { [void]$script:Prompts.Add([string]$Prompt); 'n' }
+        Mock Read-Host {
+            $Text = "$Prompt"; if (-not $Text) { $Text = "$args" }
+            [void]$global:WezCraftTestPrompts.Add($Text); 'n'
+        }
 
         & $Uninstall -Target (Join-Path $Root '.config/wezterm') -SavesDir (Join-Path $Root 'saves') -FontDir $Fonts -TempRoot $Temp -StateFile $State -ProfilePath $ProfileFile -LogFile (Join-Path $Root 'uninstall.log') | Out-Null
 
@@ -135,7 +144,10 @@ Describe 'windows-uninstall.ps1 gates every removal on the install state' -Skip:
         Add-InstallState -StateFile $State -Entry "win:path:$Clone"
         Add-InstallState -StateFile $State -Entry "win:path:$StatsFile"
         Add-InstallState -StateFile $State -Entry 'win:task:WezCraftUninstTask'
-        Mock Read-Host { [void]$script:Prompts.Add([string]$Prompt); 'y' }
+        Mock Read-Host {
+            $Text = "$Prompt"; if (-not $Text) { $Text = "$args" }
+            [void]$global:WezCraftTestPrompts.Add($Text); 'y'
+        }
 
         & $Uninstall -Target $Target -SavesDir (Join-Path $Root 'saves') -FontDir $Fonts -TempRoot $Temp -TaskName 'WezCraftUninstTask' -StateFile $State -ProfilePath $ProfileFile -LogFile (Join-Path $Root 'uninstall.log') | Out-Null
 
@@ -154,7 +166,7 @@ Describe 'windows-uninstall.ps1 gates every removal on the install state' -Skip:
         Get-ScheduledTask -TaskName 'WezCraftUninstTask' -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
         # State file deleted; no winget prompt appeared (nothing winget-owned).
         Test-Path $State | Should -BeFalse
-        @($script:Prompts | Where-Object { $_ -match 'Starship|Atuin' }).Count | Should -Be 0
+        @($global:WezCraftTestPrompts | Where-Object { $_ -match 'Starship|Atuin' }).Count | Should -Be 0
     }
 
     It 'uninstalls via winget only the package the state says WezCraft installed' {
@@ -167,7 +179,10 @@ Describe 'windows-uninstall.ps1 gates every removal on the install state' -Skip:
         Set-Content -Path (Join-Path $FakeBin 'winget.bat') -Value "@echo off`r`necho %* >> `"$Marker`"`r`nexit /b 0" -Encoding Ascii
         $State = Join-Path $Root 'state'
         Add-InstallState -StateFile $State -Entry 'win:winget:Starship.Starship'
-        Mock Read-Host { [void]$script:Prompts.Add([string]$Prompt); 'y' }
+        Mock Read-Host {
+            $Text = "$Prompt"; if (-not $Text) { $Text = "$args" }
+            [void]$global:WezCraftTestPrompts.Add($Text); 'y'
+        }
 
         $OldPath = $env:PATH
         $env:PATH = "$FakeBin;$OldPath"
@@ -179,7 +194,7 @@ Describe 'windows-uninstall.ps1 gates every removal on the install state' -Skip:
 
         $LASTEXITCODE | Should -Be 0
         (Get-Content -Path $Marker -Raw) | Should -Match 'uninstall -e Starship.Starship'
-        @($script:Prompts | Where-Object { $_ -match 'Starship' }).Count | Should -Be 1
+        @($global:WezCraftTestPrompts | Where-Object { $_ -match 'Starship' }).Count | Should -Be 1
         Test-Path $State | Should -BeFalse
     }
 }

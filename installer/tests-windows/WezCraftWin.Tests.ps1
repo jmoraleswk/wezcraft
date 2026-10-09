@@ -4,7 +4,12 @@
 # Pester's $TestDrive. Nothing here touches a real user path, the registry, or
 # the real PowerShell profile.
 
-. "$PSScriptRoot/../scripts/wezcraft-win.ps1"
+# Dot-source the helper from BeforeAll, not from the file body: in Pester 5 the
+# file body runs during Discovery, and functions defined there do not exist
+# anymore when the Run phase executes the tests. The canonical v5 pattern.
+BeforeAll {
+    . "$PSScriptRoot/../scripts/wezcraft-win.ps1"
+}
 
 Describe 'WezCraft shared Windows helpers' {
     BeforeEach {

@@ -49,6 +49,16 @@ BeforeAll {
     $Text = Get-Content -Path $ScriptPath -Raw
     $Body = $Text.Substring($ParamBlock.Extent.EndOffset)
 
+    # Parse the shared helper here as well: WezCraftWin.Tests.ps1 dot-sources it
+    # at discovery time, so a syntax error there kills that entire container as
+    # an opaque failure. Parsing it here surfaces the same breakage as a named,
+    # readable assertion.
+    $HelperPath = Join-Path $PSScriptRoot '../scripts/wezcraft-win.ps1'
+    $HelperTokens = $null
+    $HelperParseErrors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile(
+        $HelperPath, [ref]$HelperTokens, [ref]$HelperParseErrors)
+
     # Every command invocation in the file, nested script blocks included, so
     # routing can be asserted structurally instead of by substring.
     $AllCommands = @($Ast.FindAll({
@@ -87,6 +97,12 @@ Describe 'windows.ps1 parameter defaults' -Skip:(-not $OnWindows) {
     }
 }
 
+Describe 'wezcraft-win.ps1 syntax' -Skip:(-not $OnWindows) {
+    It 'parses without syntax errors' {
+        $HelperParseErrors | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'windows.ps1 uses its injectable seams' -Skip:(-not $OnWindows) {
     It 'reads the config target from $Target, not a hardcoded path' {
         $Body | Should -Match '\$Target'
@@ -104,9 +120,11 @@ Describe 'windows.ps1 uses its injectable seams' -Skip:(-not $OnWindows) {
     }
 
     It 'resolves $ProfilePath in the body and writes to it, never to a bare $PROFILE' {
-        $Body | Should -Match '\$ProfilePath = \$PROFILE' -CaseSensitive
-        $Body | Should -Match 'Test-Path \$ProfilePath' -CaseSensitive
-        $Body | Should -Match 'Out-File -FilePath \$ProfilePath' -CaseSensitive
+        # MatchExactly, not -Match -CaseSensitive: the classic Should -Match has
+        # no CaseSensitive switch in Pester 5; MatchExactly asserts with -cmatch.
+        $Body | Should -MatchExactly '\$ProfilePath = \$PROFILE'
+        $Body | Should -MatchExactly 'Test-Path \$ProfilePath'
+        $Body | Should -MatchExactly 'Out-File -FilePath \$ProfilePath'
     }
 }
 

@@ -174,7 +174,7 @@ function Invoke-CheckedNative {
         if ($LogFile) {
             Write-InstallLog -LogFile $LogFile -Level 'ERROR' -Message "$Label failed: $MissingMessage"
         }
-        Write-Host "  [FAIL] $Label: $MissingMessage" -ForegroundColor Red
+        Write-Host "  [FAIL] ${Label}: $MissingMessage" -ForegroundColor Red
         return $false
     }
 
@@ -213,7 +213,7 @@ function Start-InstallComponent {
     Write-Host ''
     Write-Host "[$Index/$Total] $Name" -ForegroundColor Cyan
     if ($LogFile) {
-        Write-InstallLog -LogFile $LogFile -Message "===== component $Index/$Total: $Name ====="
+        Write-InstallLog -LogFile $LogFile -Message "===== component $Index/${Total}: $Name ====="
     }
 }
 
